@@ -4,6 +4,8 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+# ZZC Version of fairseq
+
 import os
 from setuptools import setup, find_packages, Extension
 import sys
