@@ -1,0 +1,62 @@
+{
+    // 使用 IntelliSense 了解相关属性。 
+    // 悬停以查看现有属性的描述。
+    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: base",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Python: translation_example",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": [
+                "data-bin/iwslt14.tokenized.de-en",
+                "--arch",
+                "transformer_iwslt_de_en_re",
+                "--share-decoder-input-output-embed",
+                "--optimizer",
+                "adam",
+                "--adam-betas",
+                "(0.9, 0.98)",
+                "--clip-norm",
+                "0.0",
+                "--lr",
+                "5e-4",
+                "--lr-scheduler",
+                "inverse_sqrt",
+                "--warmup-updates",
+                "4000",
+                "--dropout",
+                "0.3",
+                "--weight-decay",
+                "0.0001",
+                "--criterion",
+                "label_smoothed_cross_entropy",
+                "--label-smoothing",
+                "0.1",
+                "--max-tokens",
+                "1024",
+                "--eval-bleu",
+                "--eval-bleu-args",
+                "{\"beam\": 5, \"max_len_a\": 1.2, \"max_len_b\": 10}",
+                "--eval-bleu-detok",
+                "moses",
+                "--eval-bleu-remove-bpe",
+                "--eval-bleu-print-samples",
+                "--best-checkpoint-metric",
+                "bleu",
+                "--maximize-best-checkpoint-metric",
+                "--num-workers",
+                "0"
+            ]
+        }
+    ]
+}
