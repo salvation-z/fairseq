@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # ZZC Version of fairseq
-# commit check 2
+# commit check 4
 
 import os
 from setuptools import setup, find_packages, Extension
