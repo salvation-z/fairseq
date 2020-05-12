@@ -16,37 +16,75 @@ from torch_geometric.nn import GATConv, GCNConv, GINConv
 # 2. add support for different kinds of GraphConv
 # 3. add default args
 class GATLayer(nn.Module):
-    def __init__(self, input_features, output_features, hidden_state, dropout_rate=0.6):
+    
+    def __init__(self, input_features, output_features, hidden_state, heads, dropout_rate=0.6):
+        """GATLayer, A two layers GAT Network
+
+        Arguments:
+            input_features {int} -- input features
+            output_features {int} -- output features
+            hidden_state {int} -- hidden state of attention(each attention head got hidden_state/heads state)
+            heads {int} -- heads of multihead-attention
+
+        Keyword Arguments:
+            dropout_rate {float} -- [dropout rate of GAT layers] (default: {0.6})
+        """
         super(GATLayer, self).__init__()
         self.conv1 = GATConv(
-            input_features, hidden_state/8, heads=8, dropout=0.6)
+            input_features, hidden_state/8, heads=8, concat=True, dropout=0.6)
         # On the Pubmed dataset, use heads=8 in conv2.
         self.conv2 = GATConv(
             hidden_state, output_features, heads=1, concat=True, dropout=0.6)
         self.__dropout__ = dropout_rate
 
-    def forward(self, data):
-        x = F.dropout(data.x, p=self.__dropout__, training=self.training)
-        x = F.elu(self.conv1(x, data.edge_index))
-        x = F.dropout(x, p=self.__dropout__, training=self.training)
-        x = self.conv2(x, data.edge_index)
-        return F.log_softmax(x, dim=1)
+    def forward(self, graphs, x):
+        """forward
+
+        Arguments:
+            graphs List[Tensor] -- Contain a list of tensor which is the COO format of the graph
+            x Tensor -- Output of transformer layers, shape=[seq_len, bsz, embed_dim]
+
+        Returns:
+            Tensor -- Output of Graph Conv layers, shape=[seq_len, bsz, embed_dim]
+        """
+        seq_len, bsz, embed_dim = x.shape
+        # form the graph
+        pyg_graphs = []
+        for n, graph in enumerate(graphs):
+            pyg_graph = PyG.data.Data(x=torch.squeeze(
+                x[:, n, :], dim=1), edge_index=graph)
+            pyg_graphs.append(pyg_graph)
+        pyg_graphs = PyG.data.Batch(pyg_graphs)
+
+        # Calc Conv
+        conv_x = F.dropout(pyg_graphs.x, p=self.__dropout__, training=self.training)
+        conv_x = F.elu(self.conv1(conv_x, pyg_graphs.edge_index))
+        conv_x = F.dropout(conv_x, p=self.__dropout__, training=self.training)
+        conv_x = F.elu(self.conv2(conv_x, pyg_graphs.edge_index))
+
+        # Calc outputs
+        output = conv_x.view(seq_len, bsz, embed_dim)
+        return output
 
 
 # TODO:
 # 1. Make Encoder Avaliable
 # 2. Add Encoder Decoder Attention layer
 # 3. Add Decoder
-# 4. Add a Final POSGAT_Model
+# 4. Add a Final PosGnnModel
+# 5. Add a Transformer Model style args support
 class POSGNNEncoder(FairseqEncoder):
 
+    @staticmethod
+    def add_args(parser):
+        pass
+
     def __init__(
-        self, args, dictionary, embed_dim=128, hidden_dim=128, dropout=0.1,
+        self, args, dictionary, embed_dim=128, hidden_dim=128, dropout=0.1, heads=8
     ):
         super().__init__(dictionary)
         self.args = args
 
-        # Our encoder will embed the inputs before feeding them to the LSTM.
         self.embed_tokens = nn.Embedding(
             num_embeddings=len(dictionary),
             embedding_dim=embed_dim,
@@ -54,13 +92,12 @@ class POSGNNEncoder(FairseqEncoder):
         )
         self.dropout = nn.Dropout(p=dropout)
 
-        self.attn_1 = fairseq.modules.MultiheadAttention(
-            embed_dim, num_heads=8, kdim=embed_dim)
-        self.attn_2 = fairseq.modules.MultiheadAttention(
-            embed_dim, num_heads=8, kdim=embed_dim)
-        self.GCN = GATLayer(embed_dim, embed_dim, hidden_dim)
+        # args contain needed for TransformerEncoderLayer
+        self.attn_1 = fairseq.modules.TransformerEncoderLayer(args)
+        self.attn_2 = fairseq.modules.TransformerEncoderLayer(args)
+        self.GNN = GATLayer(embed_dim, embed_dim, hidden_dim, heads)
 
-    def forward(self, src_tokens, src_lengths, src_anchor, src_rows, src_cols):
+    def forward(self, src_tokens, src_lengths, src_anchor, graphs):
 
         if self.args.left_pad_source:
             # Convert left-padding to right-padding.
@@ -79,18 +116,20 @@ class POSGNNEncoder(FairseqEncoder):
         # Pack the sequence into a PackedSequence object to feed to the LSTM.
         x = nn.utils.rnn.pack_padded_sequence(x, src_lengths, batch_first=True)
 
-        # Get the output from the 3-Layers.
-        _outputs, (final_hidden, _final_cell) = self.attn_1(x)
+        # Get the output from the 3 sub Layers.
+        # _outputs, (final_hidden, _final_cell) = self.attn_1(x)
+        _outputs_attn1 = self.attn_1(x)
 
-        _inputs_GCN = PyG.data(zip(src_cols, src_rows), _outputs)
-        _outputs_GCN = self.GCN(_inputs_GCN)
+        _outputs_GNN = self.GNN(graphs, _outputs_attn1)
 
-        _inputs_attn = torch.gather(_outputs_GCN, dim=1, index=src_anchor)
-        _outputs_attn = self.attn_2(_inputs_attn)
+        _inputs_attn = torch.gather(_outputs_GNN, dim=1, index=src_anchor)
+        _outputs_attn2 = self.attn_2(_inputs_attn)
 
         return {
-            # this will have shape `(bsz, hidden_dim)`
-            'final_hidden': final_hidden.squeeze(0),
+            # this will have shape `(seq_len, bsz, hidden_dim)`
+            'attn_1': _outputs_attn1,
+            # this will have shape `(anchor_size, bsz, hidden_dim)`
+            'attn_2': _outputs_attn2
         }
 
     # Encoders are required to implement this method so that we can rearrange
@@ -196,8 +235,16 @@ class POSGNNDecoder(FairseqDecoder):
         return x, None
 
 
+class TestDecoder(FairseqDecoder):
+
+    def __init__(self, dictionary):
+        super().__init__(dictionary)
+
+    def forward(self, prev_output_tokens, encoder_out):
+        return encoder_out, None
+
 @register_model('pos_gnn_model')
-class POSGNNModel(FairseqEncoderDecoderModel):
+class PosGnnModel(FairseqEncoderDecoderModel):
 
     @staticmethod
     def add_args(parser):
@@ -237,12 +284,8 @@ class POSGNNModel(FairseqEncoderDecoderModel):
             hidden_dim=args.encoder_hidden_dim,
             dropout=args.encoder_dropout,
         )
-        decoder = POSGNNDecoder(
+        decoder = TestDecoder(
             dictionary=task.target_dictionary,
-            encoder_hidden_dim=args.encoder_hidden_dim,
-            embed_dim=args.decoder_embed_dim,
-            hidden_dim=args.decoder_hidden_dim,
-            dropout=args.decoder_dropout,
         )
         model = POSGNNEncoder(encoder, decoder)
 
