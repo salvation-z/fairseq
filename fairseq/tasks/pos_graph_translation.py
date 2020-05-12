@@ -5,6 +5,7 @@
 
 from argparse import Namespace
 import json
+import codecs
 import itertools
 import logging
 import os
@@ -22,6 +23,7 @@ from fairseq.data import (
     PrependTokenDataset,
     StripTokenDataset,
     TruncateDataset,
+    POSGraphLanguagePairDataset,
 )
 
 from fairseq.tasks import FairseqTask, register_task
@@ -41,7 +43,36 @@ def load_pos_langpair_dataset(
     max_target_positions, prepend_bos=False, load_alignments=False,
     truncate_source=False, append_source_id=False
 ):
+    """[summary]
 
+    Arguments:
+        data_path {[type]} -- [description]
+        split {[type]} -- [description]
+        src {[type]} -- [description]
+        src_dict {[type]} -- [description]
+        pos_graph {[type]} -- [name of pos graph]
+        tgt {[type]} -- [description]
+        tgt_dict {[type]} -- [description]
+        combine {[type]} -- [description]
+        dataset_impl {[type]} -- [description]
+        upsample_primary {[type]} -- [description]
+        left_pad_source {[type]} -- [description]
+        left_pad_target {[type]} -- [description]
+        max_source_positions {[type]} -- [description]
+        max_target_positions {[type]} -- [description]
+
+    Keyword Arguments:
+        prepend_bos {bool} -- [description] (default: {False})
+        load_alignments {bool} -- [description] (default: {False})
+        truncate_source {bool} -- [description] (default: {False})
+        append_source_id {bool} -- [description] (default: {False})
+
+    Raises:
+        FileNotFoundError: [description]
+
+    Returns:
+        [type] -- [description]
+    """
     # Check the existence of the file
     def split_exists(split, src, tgt, lang, data_path):
         filename = os.path.join(data_path, '{}.{}-{}.{}'.format(split, src, tgt, lang))
@@ -120,6 +151,16 @@ def load_pos_langpair_dataset(
             align_dataset = data_utils.load_indexed_dataset(align_path, None, dataset_impl)
 
     tgt_dataset_sizes = tgt_dataset.sizes if tgt_dataset is not None else None
+
+    # Load POS Graph
+    pos_rows = codecs.open(os.path.join(data_path, pos_graph, '.rows'), 'r', 'utf-8').readlines()
+    pos_cols = codecs.open(os.path.join(data_path, pos_graph, '.cols'), 'r', 'utf-8').readlines()
+    pos_graphs = []
+    for row, col in zip(pos_rows, pos_cols):
+        pos_row = [eval(i) for i in row.strip().split()]
+        pos_col = [eval(i) for i in row.strip().split()]
+        pos_graphs.append((pos_row, pos_col))
+
     return POSGraphLanguagePairDataset(
         src_dataset, src_dataset.sizes, src_dict, pos_graph,
         tgt_dataset, tgt_dataset_sizes, tgt_dict,
@@ -156,6 +197,9 @@ class POSTranslationTask(FairseqTask):
     @staticmethod
     def add_args(parser):
         """Add task-specific arguments to the parser."""
+        # graph
+        parser.add_argument('pos_graph', help='dataset name of pos_graph')
+
         # fmt: off
         parser.add_argument('data', help='colon separated path to data directories list, \
                             will be iterated upon during epochs in round-robin manner')
@@ -245,9 +289,10 @@ class POSTranslationTask(FairseqTask):
 
         # infer langcode
         src, tgt = self.args.source_lang, self.args.target_lang
+        pos_graph = self.args.pos_graph
 
-        self.datasets[split] = load_langpair_dataset(
-            data_path, split, src, self.src_dict, tgt, self.tgt_dict,
+        self.datasets[split] = load_pos_langpair_dataset(
+            data_path, split, src, self.src_dict, pos_graph, tgt, self.tgt_dict,
             combine=combine, dataset_impl=self.args.dataset_impl,
             upsample_primary=self.args.upsample_primary,
             left_pad_source=self.args.left_pad_source,

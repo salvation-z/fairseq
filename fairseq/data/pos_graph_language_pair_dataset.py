@@ -10,11 +10,12 @@ import torch
 
 from . import data_utils, FairseqDataset, BaseWrapperDataset
 
+import torch_geometric as PyG
 
 logger = logging.getLogger(__name__)
 
 
-def collate(
+def collate_with_graph(
     samples, pad_idx, eos_idx, left_pad_source=True, left_pad_target=False,
     input_feeding=True,
 ):
@@ -77,6 +78,15 @@ def collate(
     else:
         ntokens = sum(len(s['source']) for s in samples)
 
+    # Getting Graph data
+    # Data is not formed into PyG dataset because nodes data is not computed yet
+    graph_coos = [torch.tensor(i['graph']) for i in samples]
+    # pyg_datasets = []
+    # for coo in graph_coos:
+    #     graph_coo = PyG.data.Data(edge_index=torch.tensor(graph_coos))
+    #     pyg_datasets.append(graph_coo)
+    # pyg_batch = PyG.data.Batch(pyg_datasets)
+
     batch = {
         'id': id,
         'nsentences': len(samples),
@@ -84,6 +94,7 @@ def collate(
         'net_input': {
             'src_tokens': src_tokens,
             'src_lengths': src_lengths,
+            'graphs': graph_coos,
         },
         'target': target,
     }
@@ -116,39 +127,6 @@ def collate(
             batch['align_weights'] = align_weights
 
     return batch
-
-
-class POSGraphDataset(BaseWrapperDataset):
-
-    def __init__(self, dataset, token=None):
-        super().__init__(dataset)
-        self.token = token
-        if token is not None:
-            self._sizes = np.array(dataset.sizes) + 1
-        else:
-            self._sizes = dataset.sizes
-
-    def __getitem__(self, idx):
-        item = self.dataset[idx]
-        if self.token is not None:
-            item = torch.cat([item, item.new([self.token])])
-        return item
-
-    @property
-    def sizes(self):
-        return self._sizes
-
-    def num_tokens(self, index):
-        n = self.dataset.num_tokens(index)
-        if self.token is not None:
-            n += 1
-        return n
-
-    def size(self, index):
-        n = self.dataset.size(index)
-        if self.token is not None:
-            n += 1
-        return n
 
 
 class POSGraphLanguagePairDataset(FairseqDataset):
@@ -186,7 +164,7 @@ class POSGraphLanguagePairDataset(FairseqDataset):
     """
 
     def __init__(
-        self, src, src_sizes, src_dict, src_pos,
+        self, src, src_sizes, src_dict, pos_graph,
         tgt=None, tgt_sizes=None, tgt_dict=None,
         left_pad_source=True, left_pad_target=False,
         max_source_positions=1024, max_target_positions=1024,
@@ -200,7 +178,7 @@ class POSGraphLanguagePairDataset(FairseqDataset):
             assert src_dict.eos() == tgt_dict.eos()
             assert src_dict.unk() == tgt_dict.unk()
         self.src = src
-        self.src_pos = src_pos
+        self.pos_graph = pos_graph
         self.tgt = tgt
         self.src_sizes = np.array(src_sizes)
         self.tgt_sizes = np.array(tgt_sizes) if tgt_sizes is not None else None
@@ -223,6 +201,7 @@ class POSGraphLanguagePairDataset(FairseqDataset):
     def __getitem__(self, index):
         tgt_item = self.tgt[index] if self.tgt is not None else None
         src_item = self.src[index]
+        graph_item = self.pos_graph[index]
         # Append EOS to end of tgt sentence if it does not have an EOS and remove
         # EOS from end of src sentence if it exists. This is useful when we use
         # use existing datasets for opposite directions i.e., when we want to
@@ -250,6 +229,7 @@ class POSGraphLanguagePairDataset(FairseqDataset):
             'id': index,
             'source': src_item,
             'target': tgt_item,
+            'graph': graph_item,
         }
         if self.align_dataset is not None:
             example['alignment'] = self.align_dataset[index]
@@ -276,6 +256,8 @@ class POSGraphLanguagePairDataset(FairseqDataset):
                     appear on the left if *left_pad_source* is ``True``.
                   - `src_lengths` (LongTensor): 1D Tensor of the unpadded
                     lengths of each source sentence of shape `(bsz)`
+                  - `graphs` (list[Tensor]): a list of 2D tensor indicate the 
+                    graphs
                   - `prev_output_tokens` (LongTensor): a padded 2D Tensor of
                     tokens in the target sentence, shifted right by one
                     position for teacher forcing, of shape `(bsz, tgt_len)`.
@@ -287,7 +269,7 @@ class POSGraphLanguagePairDataset(FairseqDataset):
                   target sentence of shape `(bsz, tgt_len)`. Padding will appear
                   on the left if *left_pad_target* is ``True``.
         """
-        return collate(
+        return collate_with_graph(
             samples, pad_idx=self.src_dict.pad(), eos_idx=self.eos,
             left_pad_source=self.left_pad_source, left_pad_target=self.left_pad_target,
             input_feeding=self.input_feeding,
