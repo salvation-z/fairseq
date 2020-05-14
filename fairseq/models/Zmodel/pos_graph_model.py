@@ -5,7 +5,10 @@ import torch.nn.functional as F
 
 import fairseq
 from fairseq import utils
-from fairseq.models import FairseqEncoder, FairseqDecoder, register_model
+from fairseq.models import (FairseqEncoder,
+                            FairseqDecoder,
+                            register_model,
+                            register_model_architecture)
 from fairseq.models.fairseq_encoder import EncoderOut
 from fairseq.modules import (MultiheadAttention, 
                             TransformerEncoderLayer, 
@@ -167,57 +170,6 @@ class POSGNNEncoder(FairseqEncoder):
             'final_hidden': final_hidden.index_select(0, new_order),
         }
 
-
-@register_model('pos_gnn_model')
-class PosGnnModel(FairseqEncoderDecoderModel):
-
-    @staticmethod
-    def add_args(parser):
-        parser.add_argument(
-            '--encoder-embed-dim', type=int, metavar='N',
-            help='dimensionality of the encoder embeddings',
-        )
-        parser.add_argument(
-            '--encoder-hidden-dim', type=int, metavar='N',
-            help='dimensionality of the encoder hidden state',
-        )
-        parser.add_argument(
-            '--encoder-dropout', type=float, default=0.1,
-            help='encoder dropout probability',
-        )
-        parser.add_argument(
-            '--decoder-embed-dim', type=int, metavar='N',
-            help='dimensionality of the decoder embeddings',
-        )
-        parser.add_argument(
-            '--decoder-hidden-dim', type=int, metavar='N',
-            help='dimensionality of the decoder hidden state',
-        )
-        parser.add_argument(
-            '--decoder-dropout', type=float, default=0.1,
-            help='decoder dropout probability',
-        )
-
-    @classmethod
-    def build_model(cls, args, task):
-
-        # Initialize our Encoder and Decoder.
-        encoder = POSGNNEncoder(
-            args=args,
-            dictionary=task.source_dictionary,
-            embed_dim=args.encoder_embed_dim,
-            hidden_dim=args.encoder_hidden_dim,
-            dropout=args.encoder_dropout,
-        )
-        decoder = TestDecoder(
-            dictionary=task.target_dictionary,
-        )
-        model = POSGNNEncoder(encoder, decoder)
-
-        # Print the model architecture.
-        print(model)
-
-        return model
 
 
 @register_model("TransGnnBase")
@@ -381,7 +333,7 @@ class TransGnnModel(FairseqEncoderDecoderModel):
 
     @classmethod
     def build_encoder(cls, args, src_dict, embed_tokens):
-        return TransformerEncoder(args, src_dict, embed_tokens)
+        return GNNTransformerEncoder(args, src_dict, embed_tokens)
 
     @classmethod
     def build_decoder(cls, args, tgt_dict, embed_tokens):
@@ -457,12 +409,15 @@ def Linear(in_features, out_features, bias=True):
 
 
 # Model support for transformer
-@register_model_architecture("transformer", "transformer")
+@register_model_architecture("gnn_transformer", "base")
 def base_architecture(args):
     args.encoder_embed_path = getattr(args, "encoder_embed_path", None)
     args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 512)
     args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 2048)
-    args.encoder_layers = getattr(args, "encoder_layers", 6)
+    
+    args.former_encoder_layers = getattr(args, "former_encoder_layers", 3)
+    args.latter_encoder_layers = getattr(args, "latter_encoder_layers", 3)
+
     args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 8)
     args.encoder_normalize_before = getattr(args, "encoder_normalize_before", False)
     args.encoder_learned_pos = getattr(args, "encoder_learned_pos", False)
@@ -500,6 +455,12 @@ def base_architecture(args):
 
     args.no_scale_embedding = getattr(args, "no_scale_embedding", False)
     args.layernorm_embedding = getattr(args, "layernorm_embedding", False)
+
+    # args for gnn
+    args.gnn_input_features = None
+    args.gnn_ouput_features = None
+    args.gnn_hidden_states = None
+    args.gnn_layers = None
 
 
 class GNNTransformerEncoder(FairseqEncoder):
@@ -579,6 +540,8 @@ class GNNTransformerEncoder(FairseqEncoder):
         self,
         src_tokens,
         src_lengths,
+        src_anchors,
+        graphs,
         cls_input: Optional[Tensor] = None,
         return_all_hiddens: bool = False,
     ):
@@ -624,6 +587,9 @@ class GNNTransformerEncoder(FairseqEncoder):
                 if return_all_hiddens:
                     assert encoder_states is not None
                     encoder_states.append(x)
+
+        # GNN layers
+        x = self.gnn_layers(graphs, x)
 
         # latter encoder layers
         for layer in self.latter_layers:
@@ -824,3 +790,55 @@ class GNNTransformerEncoder(FairseqEncoder):
 
 #         # Return the logits and ``None`` for the attention weights
 #         return x, None
+
+
+# @register_model('pos_gnn_model')
+# class PosGnnModel(FairseqEncoderDecoderModel):
+
+#     @staticmethod
+#     def add_args(parser):
+#         parser.add_argument(
+#             '--encoder-embed-dim', type=int, metavar='N',
+#             help='dimensionality of the encoder embeddings',
+#         )
+#         parser.add_argument(
+#             '--encoder-hidden-dim', type=int, metavar='N',
+#             help='dimensionality of the encoder hidden state',
+#         )
+#         parser.add_argument(
+#             '--encoder-dropout', type=float, default=0.1,
+#             help='encoder dropout probability',
+#         )
+#         parser.add_argument(
+#             '--decoder-embed-dim', type=int, metavar='N',
+#             help='dimensionality of the decoder embeddings',
+#         )
+#         parser.add_argument(
+#             '--decoder-hidden-dim', type=int, metavar='N',
+#             help='dimensionality of the decoder hidden state',
+#         )
+#         parser.add_argument(
+#             '--decoder-dropout', type=float, default=0.1,
+#             help='decoder dropout probability',
+#         )
+
+#     @classmethod
+#     def build_model(cls, args, task):
+
+#         # Initialize our Encoder and Decoder.
+#         encoder = POSGNNEncoder(
+#             args=args,
+#             dictionary=task.source_dictionary,
+#             embed_dim=args.encoder_embed_dim,
+#             hidden_dim=args.encoder_hidden_dim,
+#             dropout=args.encoder_dropout,
+#         )
+#         decoder = TestDecoder(
+#             dictionary=task.target_dictionary,
+#         )
+#         model = POSGNNEncoder(encoder, decoder)
+
+#         # Print the model architecture.
+#         print(model)
+
+#         return model
