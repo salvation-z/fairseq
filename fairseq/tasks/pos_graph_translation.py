@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 def load_pos_langpair_dataset(
     data_path, split,
-    src, src_dict, pos_graph,
+    src, src_dict, pos_graph, pos_anchor,
     tgt, tgt_dict,
     combine, dataset_impl, upsample_primary,
     left_pad_source, left_pad_target, max_source_positions,
@@ -50,7 +50,8 @@ def load_pos_langpair_dataset(
         split {[type]} -- [description]
         src {[type]} -- [description]
         src_dict {[type]} -- [description]
-        pos_graph {[type]} -- [name of pos graph]
+        pos_graph {[str]} -- [name of pos graphs]
+        pos_anchor {[str]} -- [name of pos anchors]
         tgt {[type]} -- [description]
         tgt_dict {[type]} -- [description]
         combine {[type]} -- [description]
@@ -75,7 +76,8 @@ def load_pos_langpair_dataset(
     """
     # Check the existence of the file
     def split_exists(split, src, tgt, lang, data_path):
-        filename = os.path.join(data_path, '{}.{}-{}.{}'.format(split, src, tgt, lang))
+        filename = os.path.join(
+            data_path, '{}.{}-{}.{}'.format(split, src, tgt, lang))
         return indexed_dataset.dataset_exists(filename, impl=dataset_impl)
 
     src_datasets = []
@@ -86,16 +88,20 @@ def load_pos_langpair_dataset(
 
         # infer langcode (from a->b or from b->a)
         if split_exists(split_k, src, tgt, src, data_path):
-            prefix = os.path.join(data_path, '{}.{}-{}.'.format(split_k, src, tgt))
+            prefix = os.path.join(
+                data_path, '{}.{}-{}.'.format(split_k, src, tgt))
         elif split_exists(split_k, tgt, src, src, data_path):
-            prefix = os.path.join(data_path, '{}.{}-{}.'.format(split_k, tgt, src))
+            prefix = os.path.join(
+                data_path, '{}.{}-{}.'.format(split_k, tgt, src))
         else:
             if k > 0:
                 break
             else:
-                raise FileNotFoundError('Dataset not found: {} ({})'.format(split, data_path))
+                raise FileNotFoundError(
+                    'Dataset not found: {} ({})'.format(split, data_path))
 
-        src_dataset = data_utils.load_indexed_dataset(prefix + src, src_dict, dataset_impl)
+        src_dataset = data_utils.load_indexed_dataset(
+            prefix + src, src_dict, dataset_impl)
         if truncate_source:
             src_dataset = AppendTokenDataset(
                 TruncateDataset(
@@ -106,7 +112,8 @@ def load_pos_langpair_dataset(
             )
         src_datasets.append(src_dataset)
 
-        tgt_dataset = data_utils.load_indexed_dataset(prefix + tgt, tgt_dict, dataset_impl)
+        tgt_dataset = data_utils.load_indexed_dataset(
+            prefix + tgt, tgt_dict, dataset_impl)
         if tgt_dataset is not None:
             tgt_datasets.append(tgt_dataset)
 
@@ -132,37 +139,49 @@ def load_pos_langpair_dataset(
             tgt_dataset = None
 
     if prepend_bos:
-        assert hasattr(src_dict, "bos_index") and hasattr(tgt_dict, "bos_index")
+        assert hasattr(src_dict, "bos_index") and hasattr(
+            tgt_dict, "bos_index")
         src_dataset = PrependTokenDataset(src_dataset, src_dict.bos())
         if tgt_dataset is not None:
             tgt_dataset = PrependTokenDataset(tgt_dataset, tgt_dict.bos())
 
     eos = None
     if append_source_id:
-        src_dataset = AppendTokenDataset(src_dataset, src_dict.index('[{}]'.format(src)))
+        src_dataset = AppendTokenDataset(
+            src_dataset, src_dict.index('[{}]'.format(src)))
         if tgt_dataset is not None:
-            tgt_dataset = AppendTokenDataset(tgt_dataset, tgt_dict.index('[{}]'.format(tgt)))
+            tgt_dataset = AppendTokenDataset(
+                tgt_dataset, tgt_dict.index('[{}]'.format(tgt)))
         eos = tgt_dict.index('[{}]'.format(tgt))
 
     align_dataset = None
     if load_alignments:
-        align_path = os.path.join(data_path, '{}.align.{}-{}'.format(split, src, tgt))
+        align_path = os.path.join(
+            data_path, '{}.align.{}-{}'.format(split, src, tgt))
         if indexed_dataset.dataset_exists(align_path, impl=dataset_impl):
-            align_dataset = data_utils.load_indexed_dataset(align_path, None, dataset_impl)
+            align_dataset = data_utils.load_indexed_dataset(
+                align_path, None, dataset_impl)
 
     tgt_dataset_sizes = tgt_dataset.sizes if tgt_dataset is not None else None
 
     # Load POS Graph
-    pos_rows = codecs.open(os.path.join(data_path, pos_graph, '.rows'), 'r', 'utf-8').readlines()
-    pos_cols = codecs.open(os.path.join(data_path, pos_graph, '.cols'), 'r', 'utf-8').readlines()
+    pos_rows = codecs.open(os.path.join(
+        data_path, pos_graph) + '.rows', 'r', 'utf-8').readlines()
+    pos_cols = codecs.open(os.path.join(
+        data_path, pos_graph) + '.cols', 'r', 'utf-8').readlines()
     pos_graphs = []
     for row, col in zip(pos_rows, pos_cols):
         pos_row = [eval(i) for i in row.strip().split()]
         pos_col = [eval(i) for i in row.strip().split()]
         pos_graphs.append((pos_row, pos_col))
+    pos_anchors = codecs.open(os.path.join(
+        data_path, pos_anchor) + '.anchors', 'r', 'utf-8').readlines()
+    anchors = []
+    for line in pos_anchors:
+        anchors.append([eval(i) for i in line.strip().split()])
 
     return POSGraphLanguagePairDataset(
-        src_dataset, src_dataset.sizes, src_dict, pos_graph,
+        src_dataset, src_dataset.sizes, src_dict, pos_graph, anchors,
         tgt_dataset, tgt_dataset_sizes, tgt_dict,
         left_pad_source=left_pad_source,
         left_pad_target=left_pad_target,
@@ -198,7 +217,8 @@ class POSTranslationTask(FairseqTask):
     def add_args(parser):
         """Add task-specific arguments to the parser."""
         # graph
-        parser.add_argument('pos_graph', help='dataset name of pos_graph')
+        parser.add_argument('pos_graph', help='dataset name of pos graphs')
+        parser.add_argument('pos_anchor', help='dataset name of pos anchors')
 
         # fmt: off
         parser.add_argument('data', help='colon separated path to data directories list, \
@@ -262,18 +282,24 @@ class POSTranslationTask(FairseqTask):
         assert len(paths) > 0
         # find language pair automatically
         if args.source_lang is None or args.target_lang is None:
-            args.source_lang, args.target_lang = data_utils.infer_language_pair(paths[0])
+            args.source_lang, args.target_lang = data_utils.infer_language_pair(
+                paths[0])
         if args.source_lang is None or args.target_lang is None:
-            raise Exception('Could not infer language pair, please provide it explicitly')
+            raise Exception(
+                'Could not infer language pair, please provide it explicitly')
 
         # load dictionaries
-        src_dict = cls.load_dictionary(os.path.join(paths[0], 'dict.{}.txt'.format(args.source_lang)))
-        tgt_dict = cls.load_dictionary(os.path.join(paths[0], 'dict.{}.txt'.format(args.target_lang)))
+        src_dict = cls.load_dictionary(os.path.join(
+            paths[0], 'dict.{}.txt'.format(args.source_lang)))
+        tgt_dict = cls.load_dictionary(os.path.join(
+            paths[0], 'dict.{}.txt'.format(args.target_lang)))
         assert src_dict.pad() == tgt_dict.pad()
         assert src_dict.eos() == tgt_dict.eos()
         assert src_dict.unk() == tgt_dict.unk()
-        logger.info('[{}] dictionary: {} types'.format(args.source_lang, len(src_dict)))
-        logger.info('[{}] dictionary: {} types'.format(args.target_lang, len(tgt_dict)))
+        logger.info('[{}] dictionary: {} types'.format(
+            args.source_lang, len(src_dict)))
+        logger.info('[{}] dictionary: {} types'.format(
+            args.target_lang, len(tgt_dict)))
 
         return cls(args, src_dict, tgt_dict)
 
@@ -290,9 +316,10 @@ class POSTranslationTask(FairseqTask):
         # infer langcode
         src, tgt = self.args.source_lang, self.args.target_lang
         pos_graph = self.args.pos_graph
+        pos_anchor = self.args.pos_anchor
 
         self.datasets[split] = load_pos_langpair_dataset(
-            data_path, split, src, self.src_dict, pos_graph, tgt, self.tgt_dict,
+            data_path, split, src, self.src_dict, pos_graph, pos_anchor, tgt, self.tgt_dict,
             combine=combine, dataset_impl=self.args.dataset_impl,
             upsample_primary=self.args.upsample_primary,
             left_pad_source=self.args.left_pad_source,
@@ -303,8 +330,9 @@ class POSTranslationTask(FairseqTask):
             truncate_source=self.args.truncate_source,
         )
 
-    def build_dataset_for_inference(self, src_tokens, src_lengths):
-        return LanguagePairDataset(src_tokens, src_lengths, self.source_dictionary)
+    def build_dataset_for_inference(self, src_tokens, src_lengths, src_anchors, pos_graphs):
+        return POSGraphLanguagePairDataset(src_tokens, src_lengths, self.source_dictionary, 
+                                           src_anchors, pos_graphs)
 
     def build_model(self, args):
         if getattr(args, 'eval_bleu', False):
@@ -313,20 +341,24 @@ class POSTranslationTask(FairseqTask):
                 'try --eval-bleu-detok=moses (or --eval-bleu-detok=space '
                 'to disable detokenization, e.g., when using sentencepiece)'
             )
-            detok_args = json.loads(getattr(args, 'eval_bleu_detok_args', '{}') or '{}')
+            detok_args = json.loads(
+                getattr(args, 'eval_bleu_detok_args', '{}') or '{}')
             self.tokenizer = encoders.build_tokenizer(Namespace(
                 tokenizer=getattr(args, 'eval_bleu_detok', None),
                 **detok_args
             ))
 
-            gen_args = json.loads(getattr(args, 'eval_bleu_args', '{}') or '{}')
-            self.sequence_generator = self.build_generator(Namespace(**gen_args))
+            gen_args = json.loads(
+                getattr(args, 'eval_bleu_args', '{}') or '{}')
+            self.sequence_generator = self.build_generator(
+                Namespace(**gen_args))
         return super().build_model(args)
 
     def valid_step(self, sample, model, criterion):
         loss, sample_size, logging_output = super().valid_step(sample, model, criterion)
         if self.args.eval_bleu:
-            bleu = self._inference_with_bleu(self.sequence_generator, sample, model)
+            bleu = self._inference_with_bleu(
+                self.sequence_generator, sample, model)
             logging_output['_bleu_sys_len'] = bleu.sys_len
             logging_output['_bleu_ref_len'] = bleu.ref_len
             # we split counts into separate entries so that they can be

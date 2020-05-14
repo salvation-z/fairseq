@@ -296,6 +296,8 @@ class TransGnnModel(FairseqEncoderDecoderModel):
         self,
         src_tokens,
         src_lengths,
+        src_anchors,
+        graphs,
         prev_output_tokens,
         cls_input: Optional[Tensor] = None,
         return_all_hiddens: bool = True,

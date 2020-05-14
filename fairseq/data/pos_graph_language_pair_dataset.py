@@ -81,6 +81,7 @@ def collate_with_graph(
     # Getting Graph data
     # Data is not formed into PyG dataset because nodes data is not computed yet
     graph_coos = [torch.tensor(i['graph']) for i in samples]
+    src_anchors = [torch.tensor(i['anchor']) for i in samples]
     # pyg_datasets = []
     # for coo in graph_coos:
     #     graph_coo = PyG.data.Data(edge_index=torch.tensor(graph_coos))
@@ -94,6 +95,7 @@ def collate_with_graph(
         'net_input': {
             'src_tokens': src_tokens,
             'src_lengths': src_lengths,
+            'src_anchors': src_anchors,
             'graphs': graph_coos,
         },
         'target': target,
@@ -137,7 +139,9 @@ class POSGraphLanguagePairDataset(FairseqDataset):
         src (torch.utils.data.Dataset): source dataset to wrap
         src_sizes (List[int]): source sentence lengths
         src_dict (~fairseq.data.Dictionary): source vocabulary
-        src_pos (Tensor): COO format of graph constructed via pos tag
+        src_pos (List[tuple]): COO format of graph constructed via pos tag,
+        each tuple contains two list represent cols and rows
+        src_anchors (Tensor): anchors of the key words
         tgt (torch.utils.data.Dataset, optional): target dataset to wrap
         tgt_sizes (List[int], optional): target sentence lengths
         tgt_dict (~fairseq.data.Dictionary, optional): target vocabulary
@@ -164,7 +168,7 @@ class POSGraphLanguagePairDataset(FairseqDataset):
     """
 
     def __init__(
-        self, src, src_sizes, src_dict, pos_graph,
+        self, src, src_sizes, src_dict, src_anchors, pos_graph,
         tgt=None, tgt_sizes=None, tgt_dict=None,
         left_pad_source=True, left_pad_target=False,
         max_source_positions=1024, max_target_positions=1024,
@@ -179,6 +183,7 @@ class POSGraphLanguagePairDataset(FairseqDataset):
             assert src_dict.unk() == tgt_dict.unk()
         self.src = src
         self.pos_graph = pos_graph
+        self.src_anchors = src_anchors
         self.tgt = tgt
         self.src_sizes = np.array(src_sizes)
         self.tgt_sizes = np.array(tgt_sizes) if tgt_sizes is not None else None
@@ -202,6 +207,7 @@ class POSGraphLanguagePairDataset(FairseqDataset):
         tgt_item = self.tgt[index] if self.tgt is not None else None
         src_item = self.src[index]
         graph_item = self.pos_graph[index]
+        anchor_item = self.src_anchors[index]
         # Append EOS to end of tgt sentence if it does not have an EOS and remove
         # EOS from end of src sentence if it exists. This is useful when we use
         # use existing datasets for opposite directions i.e., when we want to
@@ -230,6 +236,7 @@ class POSGraphLanguagePairDataset(FairseqDataset):
             'source': src_item,
             'target': tgt_item,
             'graph': graph_item,
+            'anchor': anchor_item,
         }
         if self.align_dataset is not None:
             example['alignment'] = self.align_dataset[index]
