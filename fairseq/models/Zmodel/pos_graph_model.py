@@ -168,88 +168,7 @@ class POSGNNEncoder(FairseqEncoder):
         }
 
 
-class POSGNNDecoder(FairseqDecoder):
 
-    def __init__(
-        self, dictionary, encoder_hidden_dim=128, embed_dim=128, hidden_dim=128,
-        dropout=0.1,
-    ):
-        super().__init__(dictionary)
-
-        # Our decoder will embed the inputs before feeding them to the LSTM.
-        self.embed_tokens = nn.Embedding(
-            num_embeddings=len(dictionary),
-            embedding_dim=embed_dim,
-            padding_idx=dictionary.pad(),
-        )
-        self.dropout = nn.Dropout(p=dropout)
-
-        # We'll use a single-layer, unidirectional LSTM for simplicity.
-        self.lstm = nn.LSTM(
-            # For the first layer we'll concatenate the Encoder's final hidden
-            # state with the embedded target tokens.
-            input_size=encoder_hidden_dim + embed_dim,
-            hidden_size=hidden_dim,
-            num_layers=1,
-            bidirectional=False,
-        )
-
-        # Define the output projection.
-        self.output_projection = nn.Linear(hidden_dim, len(dictionary))
-
-    def forward(self, prev_output_tokens, encoder_out):
-        """
-        Args:
-            prev_output_tokens (LongTensor): previous decoder outputs of shape
-                `(batch, tgt_len)`, for teacher forcing
-            encoder_out (Tensor, optional): output from the encoder, used for
-                encoder-side attention
-
-        Returns:
-            tuple:
-                - the last decoder layer's output of shape
-                  `(batch, tgt_len, vocab)`
-                - the last decoder layer's attention weights of shape
-                  `(batch, tgt_len, src_len)`
-        """
-        bsz, tgt_len = prev_output_tokens.size()
-
-        # Extract the final hidden state from the Encoder.
-        final_encoder_hidden = encoder_out['final_hidden']
-
-        # Embed the target sequence, which has been shifted right by one
-        # position and now starts with the end-of-sentence symbol.
-        x = self.embed_tokens(prev_output_tokens)
-
-        # Apply dropout.
-        x = self.dropout(x)
-
-        # Concatenate the Encoder's final hidden state to *every* embedded
-        # target token.
-        x = torch.cat(
-            [x, final_encoder_hidden.unsqueeze(1).expand(bsz, tgt_len, -1)],
-            dim=2,
-        )
-
-        # Using PackedSequence objects in the Decoder is harder than in the
-        # Encoder, since the targets are not sorted in descending length order,
-        # which is a requirement of ``pack_padded_sequence()``. Instead we'll
-        # feed nn.LSTM directly.
-        initial_state = (
-            final_encoder_hidden.unsqueeze(0),  # hidden
-            torch.zeros_like(final_encoder_hidden).unsqueeze(0),  # cell
-        )
-        output, _ = self.lstm(
-            x.transpose(0, 1),  # convert to shape `(tgt_len, bsz, dim)`
-            initial_state,
-        )
-        x = output.transpose(0, 1)  # convert to shape `(bsz, tgt_len, hidden)`
-
-        # Project the outputs to the size of the vocabulary.
-        x = self.output_projection(x)
-
-        # Return the logits and ``None`` for the attention weights
-        return x, None
 
 
 class TestDecoder(FairseqDecoder):
@@ -634,16 +553,16 @@ class GNNTransformerEncoder(FairseqEncoder):
         self.layer_wise_attention = getattr(args, "layer_wise_attention", False)
 
         self.former_layers = nn.ModuleList([])
-        self.gnn_layers = nn.ModuleList([])
+        self.gnn_layers = GATLayer(args)
         self.latter_layers  = nn.ModuleList([])
         self.former_layers.extend(
-            [self.build_encoder_layer(args) for i in range(args.encoder_layers)]
+            [self.build_encoder_layer(args) for i in range(args.former_encoder_layers)]
         )
         self.latter_layers.extend(
-            [self.build_encoder_layer(args) for i in range(args.encoder_layers)]
+            [self.build_encoder_layer(args) for i in range(args.latter_encoder_layers)]
         )
-        
-        self.num_layers = len(self.former_layers)
+
+        self.num_layers_former = len(self.former_layers)
 
         if args.encoder_normalize_before:
             self.layer_norm = LayerNorm(embed_dim)
@@ -708,9 +627,17 @@ class GNNTransformerEncoder(FairseqEncoder):
 
         encoder_states = [] if return_all_hiddens else None
 
-        # encoder layers
+        # former encoder layers
         for layer in self.former_layers:
-            
+            dropout_probability = torch.empty(1).uniform_()
+            if not self.training or (dropout_probability > self.encoder_layerdrop):
+                x = layer(x, encoder_padding_mask)
+                if return_all_hiddens:
+                    assert encoder_states is not None
+                    encoder_states.append(x)
+
+        # latter encoder layers
+        for layer in self.latter_layers:
             dropout_probability = torch.empty(1).uniform_()
             if not self.training or (dropout_probability > self.encoder_layerdrop):
                 x = layer(x, encoder_padding_mask)
@@ -804,9 +731,14 @@ class GNNTransformerEncoder(FairseqEncoder):
             state_dict[
                 "{}.embed_positions._float_tensor".format(name)
             ] = torch.FloatTensor(1)
-        for i in range(self.num_layers):
+        for i in range(self.num_layers_former):
             # update layer norms
             self.former_layers[i].upgrade_state_dict_named(
+                state_dict, "{}.layers.{}".format(name, i)
+            )
+        for i in range(self.num_layers_latter):
+            # update layer norms
+            self.latter_layers[i].upgrade_state_dict_named(
                 state_dict, "{}.layers.{}".format(name, i)
             )
 
@@ -817,3 +749,89 @@ class GNNTransformerEncoder(FairseqEncoder):
             self.normalize = False
             state_dict[version_key] = torch.Tensor([1])
         return state_dict
+
+
+
+
+# class POSGNNDecoder(FairseqDecoder):
+
+#     def __init__(
+#         self, dictionary, encoder_hidden_dim=128, embed_dim=128, hidden_dim=128,
+#         dropout=0.1,
+#     ):
+#         super().__init__(dictionary)
+
+#         # Our decoder will embed the inputs before feeding them to the LSTM.
+#         self.embed_tokens = nn.Embedding(
+#             num_embeddings=len(dictionary),
+#             embedding_dim=embed_dim,
+#             padding_idx=dictionary.pad(),
+#         )
+#         self.dropout = nn.Dropout(p=dropout)
+
+#         # We'll use a single-layer, unidirectional LSTM for simplicity.
+#         self.lstm = nn.LSTM(
+#             # For the first layer we'll concatenate the Encoder's final hidden
+#             # state with the embedded target tokens.
+#             input_size=encoder_hidden_dim + embed_dim,
+#             hidden_size=hidden_dim,
+#             num_layers=1,
+#             bidirectional=False,
+#         )
+
+#         # Define the output projection.
+#         self.output_projection = nn.Linear(hidden_dim, len(dictionary))
+
+#     def forward(self, prev_output_tokens, encoder_out):
+#         """
+#         Args:
+#             prev_output_tokens (LongTensor): previous decoder outputs of shape
+#                 `(batch, tgt_len)`, for teacher forcing
+#             encoder_out (Tensor, optional): output from the encoder, used for
+#                 encoder-side attention
+
+#         Returns:
+#             tuple:
+#                 - the last decoder layer's output of shape
+#                   `(batch, tgt_len, vocab)`
+#                 - the last decoder layer's attention weights of shape
+#                   `(batch, tgt_len, src_len)`
+#         """
+#         bsz, tgt_len = prev_output_tokens.size()
+
+#         # Extract the final hidden state from the Encoder.
+#         final_encoder_hidden = encoder_out['final_hidden']
+
+#         # Embed the target sequence, which has been shifted right by one
+#         # position and now starts with the end-of-sentence symbol.
+#         x = self.embed_tokens(prev_output_tokens)
+
+#         # Apply dropout.
+#         x = self.dropout(x)
+
+#         # Concatenate the Encoder's final hidden state to *every* embedded
+#         # target token.
+#         x = torch.cat(
+#             [x, final_encoder_hidden.unsqueeze(1).expand(bsz, tgt_len, -1)],
+#             dim=2,
+#         )
+
+#         # Using PackedSequence objects in the Decoder is harder than in the
+#         # Encoder, since the targets are not sorted in descending length order,
+#         # which is a requirement of ``pack_padded_sequence()``. Instead we'll
+#         # feed nn.LSTM directly.
+#         initial_state = (
+#             final_encoder_hidden.unsqueeze(0),  # hidden
+#             torch.zeros_like(final_encoder_hidden).unsqueeze(0),  # cell
+#         )
+#         output, _ = self.lstm(
+#             x.transpose(0, 1),  # convert to shape `(tgt_len, bsz, dim)`
+#             initial_state,
+#         )
+#         x = output.transpose(0, 1)  # convert to shape `(bsz, tgt_len, hidden)`
+
+#         # Project the outputs to the size of the vocabulary.
+#         x = self.output_projection(x)
+
+#         # Return the logits and ``None`` for the attention weights
+#         return x, None
