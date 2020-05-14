@@ -168,17 +168,6 @@ class POSGNNEncoder(FairseqEncoder):
         }
 
 
-
-
-
-class TestDecoder(FairseqDecoder):
-
-    def __init__(self, dictionary):
-        super().__init__(dictionary)
-
-    def forward(self, prev_output_tokens, encoder_out):
-        return encoder_out, None
-
 @register_model('pos_gnn_model')
 class PosGnnModel(FairseqEncoderDecoderModel):
 
