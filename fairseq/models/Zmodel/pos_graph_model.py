@@ -10,13 +10,13 @@ from fairseq.models import (FairseqEncoder,
                             register_model,
                             register_model_architecture)
 from fairseq.models.fairseq_encoder import EncoderOut
-from fairseq.modules import (MultiheadAttention, 
-                            TransformerEncoderLayer, 
-                            TransformerDecoderLayer,
-                            LayerNorm,
-                            AdaptiveSoftmax,
-                            SinusoidalPositionalEmbedding,
-                            PositionalEmbedding)
+from fairseq.modules import (MultiheadAttention,
+                             TransformerEncoderLayer,
+                             TransformerDecoderLayer,
+                             LayerNorm,
+                             AdaptiveSoftmax,
+                             SinusoidalPositionalEmbedding,
+                             PositionalEmbedding)
 
 import torch_geometric as PyG
 from torch_geometric.nn import GATConv, GCNConv, GINConv
@@ -27,30 +27,39 @@ DEFAULT_MAX_SOURCE_POSITIONS = 1024
 DEFAULT_MAX_TARGET_POSITIONS = 1024
 
 # TODO:
-# 1. add args for GAT Layers
+# 1. add args for GAT Layers √
 # 2. add support for different kinds of GraphConv
 # 3. add default args
 class GATLayer(nn.Module):
-    
-    def __init__(self, input_features, output_features, hidden_state, heads, dropout_rate=0.6):
+
+    def __init__(self, args):
         """GATLayer, A two layers GAT Network
 
         Arguments:
-            input_features {int} -- input features
-            output_features {int} -- output features
-            hidden_state {int} -- hidden state of attention(each attention head got hidden_state/heads state)
-            heads {int} -- heads of multihead-attention
-
-        Keyword Arguments:
-            dropout_rate {float} -- [dropout rate of GAT layers] (default: {0.6})
+            args.gnn_layers {int>=2} -- number of gnn layers
+            args.gnn_hidden_states {int} -- hidden state of attention(each attention head got hidden_state/heads state)
+            args.gnn_heads {int} -- heads of multihead-attention
+            args.gnn_dropout_rate {float} -- [dropout rate of GAT layers] (default: {0.6})
+        
+        Virtual arguments:
+            args.gnn_input_features {int} -- input features = args.encoder-embed-dim
+            args.gnn_output_features {int} -- output features = args.encoder-embed-dim
         """
         super(GATLayer, self).__init__()
-        self.conv1 = GATConv(
-            input_features, hidden_state/8, heads=8, concat=True, dropout=0.6)
-        # On the Pubmed dataset, use heads=8 in conv2.
-        self.conv2 = GATConv(
-            hidden_state, output_features, heads=1, concat=True, dropout=0.6)
-        self.__dropout__ = dropout_rate
+
+        self.__drop__ = args.gnn_dropout_rate
+
+        self.layers = nn.ModuleList([])
+        for n in range(args.gnn_layers):
+            if(n == 0):
+                self.layers.append(GATConv(args.encoder_embed_dim, args.gnn_hidden_states/8,
+                                           heads=args.gnn_heads, dropout=args.gnn_dropout_rate))
+            elif(n == args.gnn_layers-1):
+                self.layers.append(GATConv(args.gnn_hidden_states, args.encoder_embed_dim,
+                                           heads=args.gnn_heads, dropout=args.gnn_dropout_rate, concat=False))
+            else:
+                self.layers.append(GATConv(args.gnn_hidden_states, args.gnn_hidden_states/8,
+                                           heads=args.gnn_heads, dropout=args.gnn_dropout_rate))
 
     def forward(self, graphs, x):
         """forward
@@ -63,7 +72,8 @@ class GATLayer(nn.Module):
             Tensor -- Output of Graph Conv layers, shape=[seq_len, bsz, embed_dim]
         """
         seq_len, bsz, embed_dim = x.shape
-        # form the graph
+
+        # Form the graph with COO Tensor
         pyg_graphs = []
         for n, graph in enumerate(graphs):
             pyg_graph = PyG.data.Data(x=torch.squeeze(
@@ -72,10 +82,10 @@ class GATLayer(nn.Module):
         pyg_graphs = PyG.data.Batch(pyg_graphs)
 
         # Calc Conv
-        conv_x = F.dropout(pyg_graphs.x, p=self.__dropout__, training=self.training)
-        conv_x = F.elu(self.conv1(conv_x, pyg_graphs.edge_index))
-        conv_x = F.dropout(conv_x, p=self.__dropout__, training=self.training)
-        conv_x = F.elu(self.conv2(conv_x, pyg_graphs.edge_index))
+        conv_x = F.dropout(pyg_graphs.x, p=self.__drop__,
+                           training=self.training)
+        for layer in self.layers:
+            conv_x = F.elu(layer(conv_x, pyg_graphs.edge_index))
 
         # Calc outputs
         output = conv_x.view(seq_len, bsz, embed_dim)
@@ -93,83 +103,6 @@ class GATLayer(nn.Module):
 # 1.是利用self-attention直接写，灵活性最好，但工程量较大，效果不好说
 # 2.是用transformer-layer写，结合了两层全连接层，估计比第一种方便一点
 # 3.是利用transformer Encoder写，这种结构最完美，可惜有点难搞（但是可以复制粘贴？我想用这个了~）
-class POSGNNEncoder(FairseqEncoder):
-
-    @staticmethod
-    def add_args(parser):
-        pass
-
-    def __init__(
-        self, args, dictionary, embed_dim=128, hidden_dim=128, dropout=0.1, heads=8
-    ):
-        super().__init__(dictionary)
-        self.args = args
-
-        self.embed_tokens = nn.Embedding(
-            num_embeddings=len(dictionary),
-            embedding_dim=embed_dim,
-            padding_idx=dictionary.pad(),
-        )
-        self.dropout = nn.Dropout(p=dropout)
-
-        # args contain needed for TransformerEncoderLayer
-        self.attn_1 = fairseq.modules.TransformerEncoderLayer(args)
-        self.attn_2 = fairseq.modules.TransformerEncoderLayer(args)
-        self.GNN = GATLayer(embed_dim, embed_dim, hidden_dim, heads)
-
-    def forward(self, src_tokens, src_lengths, src_anchor, graphs):
-
-        if self.args.left_pad_source:
-            # Convert left-padding to right-padding.
-            src_tokens = utils.convert_padding_direction(
-                src_tokens,
-                padding_idx=self.dictionary.pad(),
-                left_to_right=True
-            )
-
-        # Embed the source.
-        x = self.embed_tokens(src_tokens)
-
-        # Apply dropout.
-        x = self.dropout(x)
-
-        # (bsz, seq_len, hidden_dim) -> (seq_len, bsz, hidden_dim)
-        x = x.transpose(0, 1)
-
-        # Get the output from the 3 sub Layers.
-        # _outputs, (final_hidden, _final_cell) = self.attn_1(x)
-        _outputs_attn1 = self.attn_1(x)
-
-        _outputs_GNN = self.GNN(graphs, _outputs_attn1)
-
-        _inputs_attn = torch.gather(_outputs_GNN, dim=1, index=src_anchor)
-        _outputs_attn2 = self.attn_2(_inputs_attn)
-
-        return {
-            # this will have shape `(seq_len, bsz, hidden_dim)`
-            'attn_1': _outputs_attn1,
-            # this will have shape `(anchor_size, bsz, hidden_dim)`
-            'attn_2': _outputs_attn2
-        }
-
-    # Encoders are required to implement this method so that we can rearrange
-    # the order of the batch elements during inference (e.g., beam search).
-    def reorder_encoder_out(self, encoder_out, new_order):
-        """
-        Reorder encoder output according to `new_order`.
-
-        Args:
-            encoder_out: output from the ``forward()`` method
-            new_order (LongTensor): desired order
-
-        Returns:
-            `encoder_out` rearranged according to `new_order`
-        """
-        final_hidden = encoder_out['final_hidden']
-        return {
-            'final_hidden': final_hidden.index_select(0, new_order),
-        }
-
 
 
 @register_model("TransGnnBase")
@@ -214,7 +147,9 @@ class TransGnnModel(FairseqEncoderDecoderModel):
                             help='encoder embedding dimension')
         parser.add_argument('--encoder-ffn-embed-dim', type=int, metavar='N',
                             help='encoder embedding dimension for FFN')
-        parser.add_argument('--encoder-layers', type=int, metavar='N',
+        parser.add_argument('--former-encoder-layers', type=int, metavar='N',
+                            help='num encoder layers')
+        parser.add_argument('--latter-encoder-layers', type=int, metavar='N',
                             help='num encoder layers')
         parser.add_argument('--encoder-attention-heads', type=int, metavar='N',
                             help='num encoder attention heads')
@@ -222,6 +157,16 @@ class TransGnnModel(FairseqEncoderDecoderModel):
                             help='apply layernorm before each encoder block')
         parser.add_argument('--encoder-learned-pos', action='store_true',
                             help='use learned positional embeddings in the encoder')
+        # args for GNN
+        parser.add_argument('--gnn-layers', type=int,
+                            help='layers of gnn')
+        parser.add_argument('--gnn-heads', type=int,
+                            help='heads of GAT attention head')
+        parser.add_argument('--gnn-hidden-states', type=int,
+                            help='hidden state of gnn layers')
+        parser.add_argument('--gnn-dropout-rate', type=float,
+                            help='drop out rate of gnn layers')
+        # args for decoder
         parser.add_argument('--decoder-embed-path', type=str, metavar='STR',
                             help='path to pre-trained decoder embedding')
         parser.add_argument('--decoder-embed-dim', type=int, metavar='N',
@@ -291,7 +236,8 @@ class TransGnnModel(FairseqEncoderDecoderModel):
 
         if args.share_all_embeddings:
             if src_dict != tgt_dict:
-                raise ValueError("--share-all-embeddings requires a joined dictionary")
+                raise ValueError(
+                    "--share-all-embeddings requires a joined dictionary")
             if args.encoder_embed_dim != args.decoder_embed_dim:
                 raise ValueError(
                     "--share-all-embeddings requires --encoder-embed-dim to match --decoder-embed-dim"
@@ -393,6 +339,7 @@ class TransGnnModel(FairseqEncoderDecoderModel):
         """Get normalized probabilities (or log probs) from a net's output."""
         return self.get_normalized_probs_scriptable(net_output, log_probs, sample)
 
+
 def Embedding(num_embeddings, embedding_dim, padding_idx):
     m = nn.Embedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
     nn.init.normal_(m.weight, mean=0, std=embedding_dim ** -0.5)
@@ -414,28 +361,39 @@ def base_architecture(args):
     args.encoder_embed_path = getattr(args, "encoder_embed_path", None)
     args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 512)
     args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 2048)
-    
+
+    # Add former/latter encoder argument
     args.former_encoder_layers = getattr(args, "former_encoder_layers", 3)
     args.latter_encoder_layers = getattr(args, "latter_encoder_layers", 3)
+    # Add GNN argument
+    args.gnn_dropout_rate = getattr(args, 'gnn_dropout_rate', 0.6)
+    args.gnn_heads = getattr(args, 'gnn_heads', 8)
+    args.gnn_hidden_states = getattr(args, 'gnn_hidden_states', 512)
+    args.gnn_layers = getattr(args, 'gnn_layers', 2)
 
     args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 8)
-    args.encoder_normalize_before = getattr(args, "encoder_normalize_before", False)
+    args.encoder_normalize_before = getattr(
+        args, "encoder_normalize_before", False)
     args.encoder_learned_pos = getattr(args, "encoder_learned_pos", False)
     args.decoder_embed_path = getattr(args, "decoder_embed_path", None)
-    args.decoder_embed_dim = getattr(args, "decoder_embed_dim", args.encoder_embed_dim)
+    args.decoder_embed_dim = getattr(
+        args, "decoder_embed_dim", args.encoder_embed_dim)
     args.decoder_ffn_embed_dim = getattr(
         args, "decoder_ffn_embed_dim", args.encoder_ffn_embed_dim
     )
     args.decoder_layers = getattr(args, "decoder_layers", 6)
     args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 8)
-    args.decoder_normalize_before = getattr(args, "decoder_normalize_before", False)
+    args.decoder_normalize_before = getattr(
+        args, "decoder_normalize_before", False)
     args.decoder_learned_pos = getattr(args, "decoder_learned_pos", False)
     args.attention_dropout = getattr(args, "attention_dropout", 0.0)
     args.activation_dropout = getattr(args, "activation_dropout", 0.0)
     args.activation_fn = getattr(args, "activation_fn", "relu")
     args.dropout = getattr(args, "dropout", 0.1)
-    args.adaptive_softmax_cutoff = getattr(args, "adaptive_softmax_cutoff", None)
-    args.adaptive_softmax_dropout = getattr(args, "adaptive_softmax_dropout", 0)
+    args.adaptive_softmax_cutoff = getattr(
+        args, "adaptive_softmax_cutoff", None)
+    args.adaptive_softmax_dropout = getattr(
+        args, "adaptive_softmax_dropout", 0)
     args.share_decoder_input_output_embed = getattr(
         args, "share_decoder_input_output_embed", False
     )
@@ -451,7 +409,8 @@ def base_architecture(args):
     args.decoder_output_dim = getattr(
         args, "decoder_output_dim", args.decoder_embed_dim
     )
-    args.decoder_input_dim = getattr(args, "decoder_input_dim", args.decoder_embed_dim)
+    args.decoder_input_dim = getattr(
+        args, "decoder_input_dim", args.decoder_embed_dim)
 
     args.no_scale_embedding = getattr(args, "no_scale_embedding", False)
     args.layernorm_embedding = getattr(args, "layernorm_embedding", False)
@@ -487,7 +446,8 @@ class GNNTransformerEncoder(FairseqEncoder):
 
         self.embed_tokens = embed_tokens
 
-        self.embed_scale = 1.0 if args.no_scale_embedding else math.sqrt(embed_dim)
+        self.embed_scale = 1.0 if args.no_scale_embedding else math.sqrt(
+            embed_dim)
 
         self.embed_positions = (
             PositionalEmbedding(
@@ -500,16 +460,19 @@ class GNNTransformerEncoder(FairseqEncoder):
             else None
         )
 
-        self.layer_wise_attention = getattr(args, "layer_wise_attention", False)
+        self.layer_wise_attention = getattr(
+            args, "layer_wise_attention", False)
 
         self.former_layers = nn.ModuleList([])
         self.gnn_layers = GATLayer(args)
-        self.latter_layers  = nn.ModuleList([])
+        self.latter_layers = nn.ModuleList([])
         self.former_layers.extend(
-            [self.build_encoder_layer(args) for i in range(args.former_encoder_layers)]
+            [self.build_encoder_layer(args)
+             for i in range(args.former_encoder_layers)]
         )
         self.latter_layers.extend(
-            [self.build_encoder_layer(args) for i in range(args.latter_encoder_layers)]
+            [self.build_encoder_layer(args)
+             for i in range(args.latter_encoder_layers)]
         )
 
         self.num_layers_former = len(self.former_layers)
@@ -649,8 +612,10 @@ class GNNTransformerEncoder(FairseqEncoder):
 
         return EncoderOut(
             encoder_out=new_encoder_out["encoder_out"],  # T x B x C
-            encoder_padding_mask=new_encoder_out["encoder_padding_mask"],  # B x T
-            encoder_embedding=new_encoder_out["encoder_embedding"],  # B x T x C
+            # B x T
+            encoder_padding_mask=new_encoder_out["encoder_padding_mask"],
+            # B x T x C
+            encoder_embedding=new_encoder_out["encoder_embedding"],
             encoder_states=encoder_states,  # List[T x B x C]
         )
 
@@ -672,7 +637,8 @@ class GNNTransformerEncoder(FairseqEncoder):
             )
             if self._future_mask.size(0) < dim:
                 self._future_mask = torch.triu(
-                    utils.fill_with_neg_inf(self._future_mask.resize_(dim, dim)), 1
+                    utils.fill_with_neg_inf(
+                        self._future_mask.resize_(dim, dim)), 1
                 )
         return self._future_mask[:dim, :dim]
 
@@ -704,8 +670,6 @@ class GNNTransformerEncoder(FairseqEncoder):
             self.normalize = False
             state_dict[version_key] = torch.Tensor([1])
         return state_dict
-
-
 
 
 # class POSGNNDecoder(FairseqDecoder):
@@ -842,3 +806,80 @@ class GNNTransformerEncoder(FairseqEncoder):
 #         print(model)
 
 #         return model
+
+# class POSGNNEncoder(FairseqEncoder):
+
+#     @staticmethod
+#     def add_args(parser):
+#         pass
+
+#     def __init__(
+#         self, args, dictionary, embed_dim=128, hidden_dim=128, dropout=0.1, heads=8
+#     ):
+#         super().__init__(dictionary)
+#         self.args = args
+
+#         self.embed_tokens = nn.Embedding(
+#             num_embeddings=len(dictionary),
+#             embedding_dim=embed_dim,
+#             padding_idx=dictionary.pad(),
+#         )
+#         self.dropout = nn.Dropout(p=dropout)
+
+#         # args contain needed for TransformerEncoderLayer
+#         self.attn_1 = fairseq.modules.TransformerEncoderLayer(args)
+#         self.attn_2 = fairseq.modules.TransformerEncoderLayer(args)
+#         self.GNN = GATLayer(embed_dim, embed_dim, hidden_dim, heads)
+
+#     def forward(self, src_tokens, src_lengths, src_anchor, graphs):
+
+#         if self.args.left_pad_source:
+#             # Convert left-padding to right-padding.
+#             src_tokens = utils.convert_padding_direction(
+#                 src_tokens,
+#                 padding_idx=self.dictionary.pad(),
+#                 left_to_right=True
+#             )
+
+#         # Embed the source.
+#         x = self.embed_tokens(src_tokens)
+
+#         # Apply dropout.
+#         x = self.dropout(x)
+
+#         # (bsz, seq_len, hidden_dim) -> (seq_len, bsz, hidden_dim)
+#         x = x.transpose(0, 1)
+
+#         # Get the output from the 3 sub Layers.
+#         # _outputs, (final_hidden, _final_cell) = self.attn_1(x)
+#         _outputs_attn1 = self.attn_1(x)
+
+#         _outputs_GNN = self.GNN(graphs, _outputs_attn1)
+
+#         _inputs_attn = torch.gather(_outputs_GNN, dim=1, index=src_anchor)
+#         _outputs_attn2 = self.attn_2(_inputs_attn)
+
+#         return {
+#             # this will have shape `(seq_len, bsz, hidden_dim)`
+#             'attn_1': _outputs_attn1,
+#             # this will have shape `(anchor_size, bsz, hidden_dim)`
+#             'attn_2': _outputs_attn2
+#         }
+
+#     # Encoders are required to implement this method so that we can rearrange
+#     # the order of the batch elements during inference (e.g., beam search).
+#     def reorder_encoder_out(self, encoder_out, new_order):
+#         """
+#         Reorder encoder output according to `new_order`.
+
+#         Args:
+#             encoder_out: output from the ``forward()`` method
+#             new_order (LongTensor): desired order
+
+#         Returns:
+#             `encoder_out` rearranged according to `new_order`
+#         """
+#         final_hidden = encoder_out['final_hidden']
+#         return {
+#             'final_hidden': final_hidden.index_select(0, new_order),
+#         }
