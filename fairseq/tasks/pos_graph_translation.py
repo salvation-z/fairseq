@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 def load_pos_langpair_dataset(
     data_path, split,
-    src, src_dict, pos_graph, pos_anchor,
+    src, src_dict,
     tgt, tgt_dict,
     combine, dataset_impl, upsample_primary,
     left_pad_source, left_pad_target, max_source_positions,
@@ -165,23 +165,54 @@ def load_pos_langpair_dataset(
     tgt_dataset_sizes = tgt_dataset.sizes if tgt_dataset is not None else None
 
     # Load POS Graph
-    pos_rows = codecs.open(os.path.join(
-        data_path, pos_graph) + '.rows', 'r', 'utf-8').readlines()
-    pos_cols = codecs.open(os.path.join(
-        data_path, pos_graph) + '.cols', 'r', 'utf-8').readlines()
-    pos_graphs = []
-    for row, col in zip(pos_rows, pos_cols):
-        pos_row = [eval(i) for i in row.strip().split()]
-        pos_col = [eval(i) for i in row.strip().split()]
-        pos_graphs.append((pos_row, pos_col))
-    pos_anchors = codecs.open(os.path.join(
-        data_path, pos_anchor) + '.anchors', 'r', 'utf-8').readlines()
-    anchors = []
-    for line in pos_anchors:
-        anchors.append([eval(i) for i in line.strip().split()])
+
+    def graph_exist(data_path, split, src, tgt, lang):
+        existence = True
+        row_path = os.path.join(data_path, '{}.{}-{}.{}'.format(split, src, tgt, src)) + '.rows'
+        col_path = os.path.join(data_path, '{}.{}-{}.{}'.format(split, src, tgt, src)) + '.cols'
+        anchor_path = os.path.join(data_path, '{}.{}-{}.{}'.format(split, src, tgt, src)) + '.anchors'
+        
+        if(not os.path.exists(row_path)):
+            existence = False
+        elif(not os.path.exists(col_path)):
+            existence = False
+        elif(not os.path.exists(anchor_path)):
+            existence = False
+
+        return existence
+
+    pos_graphs_l = []
+    pos_anchors_l = []
+    for k in itertools.count():
+        split_k = split + (str(k) if k > 0 else '')
+
+        existence = graph_exist(split_k, src, tgt, src)
+        if(not existence):
+            if(k == 0):
+                raise FileNotFoundError('POS Graph Dataset not found')
+            if(k > 0):
+                break
+
+        pos_rows = codecs.open(os.path.join(
+            data_path, '{}.{}-{}.{}'.format(split, src, tgt, src)) + '.rows', 'r', 'utf-8').readlines()
+        pos_cols = codecs.open(os.path.join(
+            data_path, '{}.{}-{}.{}'.format(split, src, tgt, src)) + '.cols', 'r', 'utf-8').readlines()
+        pos_graphs = []
+        for row, col in zip(pos_rows, pos_cols):
+            pos_row = [eval(i) for i in row.strip().split()]
+            pos_col = [eval(i) for i in row.strip().split()]
+            pos_graphs.append((pos_row, pos_col))
+        pos_anchors = codecs.open(os.path.join(
+            data_path, '{}.{}-{}.{}'.format(split, src, tgt, src)) + '.anchors', 'r', 'utf-8').readlines()
+        anchors = []
+        for line in pos_anchors:
+            anchors.append([eval(i) for i in line.strip().split()])
+
+        pos_graphs_l.extend(pos_graphs)
+        pos_anchors_l.extend(pos_anchors)
 
     return POSGraphLanguagePairDataset(
-        src_dataset, src_dataset.sizes, src_dict, pos_graph, anchors,
+        src_dataset, src_dataset.sizes, src_dict, pos_graphs, anchors,
         tgt_dataset, tgt_dataset_sizes, tgt_dict,
         left_pad_source=left_pad_source,
         left_pad_target=left_pad_target,
@@ -217,9 +248,6 @@ class POSTranslationTask(FairseqTask):
     def add_args(parser):
         """Add task-specific arguments to the parser."""
         # graph
-        parser.add_argument('pos_graph', help='dataset name of pos graphs')
-        parser.add_argument('pos_anchor', help='dataset name of pos anchors')
-
         # fmt: off
         parser.add_argument('data', help='colon separated path to data directories list, \
                             will be iterated upon during epochs in round-robin manner')
@@ -315,11 +343,9 @@ class POSTranslationTask(FairseqTask):
 
         # infer langcode
         src, tgt = self.args.source_lang, self.args.target_lang
-        pos_graph = self.args.pos_graph
-        pos_anchor = self.args.pos_anchor
 
         self.datasets[split] = load_pos_langpair_dataset(
-            data_path, split, src, self.src_dict, pos_graph, pos_anchor, tgt, self.tgt_dict,
+            data_path, split, src, self.src_dict, tgt, self.tgt_dict,
             combine=combine, dataset_impl=self.args.dataset_impl,
             upsample_primary=self.args.upsample_primary,
             left_pad_source=self.args.left_pad_source,
