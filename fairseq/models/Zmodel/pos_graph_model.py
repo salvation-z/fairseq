@@ -1,14 +1,17 @@
 import math
 import torch
+from torch import Tensor
 from torch import nn
 import torch.nn.functional as F
+from typing import Any, Dict, List, Optional, Tuple
 
 import fairseq
 from fairseq import utils
 from fairseq.models import (FairseqEncoder,
                             FairseqDecoder,
                             register_model,
-                            register_model_architecture)
+                            register_model_architecture,
+                            FairseqEncoderDecoderModel)
 from fairseq.models.fairseq_encoder import EncoderOut
 from fairseq.modules import (MultiheadAttention,
                              TransformerEncoderLayer,
