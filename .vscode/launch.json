@@ -13,7 +13,7 @@
             "program":"/home/zzc/ZZC_workspace/python_workspace/fairseq/fairseq_ori/generate.py",
             "console":"integratedTerminal",
             "args": [
-                "fairseq-generate", "data-bin/iwslt14.tokenized.de-en",
+                "data-bin/iwslt14.tokenized.de-en",
                 "--path", "checkpoints/checkpoint_best.pt",
                 "--batch-size", "128",
                 "--beam", "5",
@@ -27,14 +27,15 @@
             "name": "Python: preprocess",
             "type": "python",
             "request": "launch",
-            "env": {"DataPath":"/home/zzc/ZZC_workspace/python_workspace/fairseq/datasets/en-de/pos_graph"},
+            "env": {
+                "DataPath": "/home/zzc/ZZC_workspace/python_workspace/fairseq/datasets/en_de/pos_graph"
+            },
             "program": "/home/zzc/ZZC_workspace/python_workspace/fairseq/fairseq_ori/preprocess.py",
             "console": "integratedTerminal",
             "args": [
-                "fairseq-preprocess",
                 "--trainpref", "$DataPath/datasets/train.tok.clean.bpe.32000",
-                "--validpref", "$DataPath/datasets/",
-                "--testpref", "$DataPath/datasets/",
+                "--validpref", "$DataPath/datasets/newstest2016.tok.bpe.32000",
+                "--testpref", "$DataPath/datasets/newstest2015.tok.bpe.32000,$DataPath/datasets/newstest2014.tok.bpe.32000,$DataPath/datasets/newstest2013.tok.bpe.32000,$DataPath/datasets/newstest2012.tok.bpe.32000,$DataPath/datasets/newstest2011.tok.bpe.32000,$DataPath/datasets/newstest2010.tok.bpe.32000,$DataPath/datasets/newstest2009.tok.bpe.32000", 
                 "--source-lang", "en", 
                 "--target-lang", "de",
                 "--destdir", "$DataPath/data-bin", 

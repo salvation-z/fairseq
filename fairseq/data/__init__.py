@@ -47,7 +47,7 @@ from .transform_eos_lang_pair_dataset import TransformEosLangPairDataset
 from .truncate_dataset import TruncateDataset
 
 # Add by zzc
-from .pos_graph_language_pair_dataset import LanguagePairDataset
+from .pos_graph_language_pair_dataset import POSGraphLanguagePairDataset
 
 from .iterators import (
     CountingIterator,
