@@ -5,6 +5,7 @@
 
 from argparse import Namespace
 import json
+from tqdm import tqdm
 import codecs
 import itertools
 import logging
@@ -168,9 +169,9 @@ def load_pos_langpair_dataset(
 
     def graph_exist(data_path, split, src, tgt, lang):
         existence = True
-        row_path = os.path.join(data_path, '{}.{}-{}.{}'.format(split, src, tgt, src)) + '.rows'
-        col_path = os.path.join(data_path, '{}.{}-{}.{}'.format(split, src, tgt, src)) + '.cols'
-        anchor_path = os.path.join(data_path, '{}.{}-{}.{}'.format(split, src, tgt, src)) + '.anchors'
+        row_path = os.path.join(data_path, '{}.{}-{}.{}'.format(split, src, tgt, src)) + '.row'
+        col_path = os.path.join(data_path, '{}.{}-{}.{}'.format(split, src, tgt, src)) + '.col'
+        anchor_path = os.path.join(data_path, '{}.{}-{}.{}'.format(split, src, tgt, src)) + '.anchor'
         
         if(not os.path.exists(row_path)):
             existence = False
@@ -186,7 +187,7 @@ def load_pos_langpair_dataset(
     for k in itertools.count():
         split_k = split + (str(k) if k > 0 else '')
 
-        existence = graph_exist(split_k, src, tgt, src)
+        existence = graph_exist(data_path, split_k, src, tgt, src)
         if(not existence):
             if(k == 0):
                 raise FileNotFoundError('POS Graph Dataset not found')
@@ -194,16 +195,21 @@ def load_pos_langpair_dataset(
                 break
 
         pos_rows = codecs.open(os.path.join(
-            data_path, '{}.{}-{}.{}'.format(split, src, tgt, src)) + '.rows', 'r', 'utf-8').readlines()
+            data_path, '{}.{}-{}.{}'.format(split_k, src, tgt, src)) + '.row', 'r', 'utf-8').readlines()
         pos_cols = codecs.open(os.path.join(
-            data_path, '{}.{}-{}.{}'.format(split, src, tgt, src)) + '.cols', 'r', 'utf-8').readlines()
+            data_path, '{}.{}-{}.{}'.format(split_k, src, tgt, src)) + '.col', 'r', 'utf-8').readlines()
         pos_graphs = []
-        for row, col in zip(pos_rows, pos_cols):
+        print('Loading graphs' + '.' * 50)
+        assert len(pos_cols) == len(pos_rows)
+        pbar = tqdm(total=len(pos_cols))
+        for n, (row, col) in enumerate(zip(pos_rows, pos_cols)):
             pos_row = [eval(i) for i in row.strip().split()]
             pos_col = [eval(i) for i in row.strip().split()]
             pos_graphs.append((pos_row, pos_col))
+            pbar.update()
+        pbar.close()
         pos_anchors = codecs.open(os.path.join(
-            data_path, '{}.{}-{}.{}'.format(split, src, tgt, src)) + '.anchors', 'r', 'utf-8').readlines()
+            data_path, '{}.{}-{}.{}'.format(split_k, src, tgt, src)) + '.anchor', 'r', 'utf-8').readlines()
         anchors = []
         for line in pos_anchors:
             anchors.append([eval(i) for i in line.strip().split()])
