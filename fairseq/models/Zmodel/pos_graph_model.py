@@ -55,13 +55,13 @@ class GATLayer(nn.Module):
         self.layers = nn.ModuleList([])
         for n in range(args.gnn_layers):
             if(n == 0):
-                self.layers.append(GATConv(args.encoder_embed_dim, args.gnn_hidden_states/8,
+                self.layers.append(GATConv(args.encoder_embed_dim, int(args.gnn_hidden_states/8),
                                            heads=args.gnn_heads, dropout=args.gnn_dropout_rate))
             elif(n == args.gnn_layers-1):
                 self.layers.append(GATConv(args.gnn_hidden_states, args.encoder_embed_dim,
                                            heads=args.gnn_heads, dropout=args.gnn_dropout_rate, concat=False))
             else:
-                self.layers.append(GATConv(args.gnn_hidden_states, args.gnn_hidden_states/8,
+                self.layers.append(GATConv(args.gnn_hidden_states, int(args.gnn_hidden_states/8),
                                            heads=args.gnn_heads, dropout=args.gnn_dropout_rate))
 
     def forward(self, graphs, x):
@@ -420,11 +420,6 @@ def base_architecture(args):
     args.no_scale_embedding = getattr(args, "no_scale_embedding", False)
     args.layernorm_embedding = getattr(args, "layernorm_embedding", False)
 
-    # args for gnn
-    args.gnn_input_features = None
-    args.gnn_ouput_features = None
-    args.gnn_hidden_states = None
-    args.gnn_layers = None
 
 
 class GNNTransformerEncoder(FairseqEncoder):

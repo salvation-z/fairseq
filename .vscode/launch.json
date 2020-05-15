@@ -52,6 +52,7 @@
             "console": "integratedTerminal",
             "args": [
                 "/home/zzc/ZZC_workspace/python_workspace/fairseq/datasets/en_de/pos_graph/data-bin",
+                "--task", "pos_translation",
                 "--arch", "gnn_transformer_base",
                 "--share-decoder-input-output-embed",
                 "--optimizer", "adam",
