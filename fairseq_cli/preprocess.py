@@ -34,8 +34,8 @@ def main(args):
     # change path to incorporate with vscode env
     args.destdir = os.path.join(os.getenv('DataPath'), args.destdir)
     args.trainpref = os.path.join(os.getenv('DataPath'), args.trainpref)
-    args.validpref = os.path.join(os.getenv('DataPath'), args.validpref)
-    args.testpref = os.path.join(os.getenv('DataPath'), args.testpref)
+    # args.validpref = os.path.join(os.getenv('DataPath'), args.validpref)
+    # args.testpref = os.path.join(os.getenv('DataPath'), args.testpref)
 
     utils.import_user_module(args)
 
@@ -248,10 +248,12 @@ def main(args):
             make_dataset(vocab, args.trainpref, "train", lang, num_workers=args.workers)
         if args.validpref:
             for k, validpref in enumerate(args.validpref.split(",")):
+                validpref = os.path.join(os.getenv('DataPath'), validpref)
                 outprefix = "valid{}".format(k) if k > 0 else "valid"
                 make_dataset(vocab, validpref, outprefix, lang, num_workers=args.workers)
         if args.testpref:
             for k, testpref in enumerate(args.testpref.split(",")):
+                testpref = os.path.join(os.getenv('DataPath'), testpref)
                 outprefix = "test{}".format(k) if k > 0 else "test"
                 make_dataset(vocab, testpref, outprefix, lang, num_workers=args.workers)
 

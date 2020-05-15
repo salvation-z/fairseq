@@ -105,7 +105,7 @@ class GATLayer(nn.Module):
 # 3.是利用transformer Encoder写，这种结构最完美，可惜有点难搞（但是可以复制粘贴？我想用这个了~）
 
 
-@register_model("TransGnnBase")
+@register_model("gnn_transformer")
 class TransGnnModel(FairseqEncoderDecoderModel):
     """
     Transformer model from `"Attention Is All You Need" (Vaswani, et al, 2017)
@@ -358,7 +358,7 @@ def Linear(in_features, out_features, bias=True):
 
 
 # Model support for transformer
-@register_model_architecture("gnn_transformer", "base")
+@register_model_architecture("gnn_transformer", "gnn_transformer_base")
 def base_architecture(args):
     args.encoder_embed_path = getattr(args, "encoder_embed_path", None)
     args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 512)
