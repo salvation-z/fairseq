@@ -36,14 +36,74 @@ logger = logging.getLogger(__name__)
 
 def load_data_base(
     data_path, split,
-    src, src_dict,
-    tgt, tgt_dict,
+    src, s_dict, tgt,
     combine, dataset_impl, upsample_primary,
-    left_pad_source, left_pad_target, max_source_positions,
-    max_target_positions, prepend_bos=False, load_alignments=False,
+    max_source_positions, suffix, 
+    prepend_bos=False,
     truncate_source=False, append_source_id=False
     ):
-    pass
+
+    def split_exists(split, src, tgt, lang, data_path):
+        filename = os.path.join(
+            data_path, '{}.{}-{}.{}'.format(split, src, tgt, lang))
+        return indexed_dataset.dataset_exists(filename, impl=dataset_impl)
+
+    src_datasets = []
+
+    for k in itertools.count():
+        split_k = split + (str(k) if k > 0 else '')
+
+        # infer langcode (from a->b or from b->a)
+        if split_exists(split_k, src, tgt, src, data_path):
+            prefix = os.path.join(
+                data_path, '{}.{}-{}.'.format(split_k, src, tgt))
+        elif split_exists(split_k, tgt, src, src, data_path):
+            prefix = os.path.join(
+                data_path, '{}.{}-{}.'.format(split_k, tgt, src))
+        else:
+            if k > 0:
+                break
+            else:
+                raise FileNotFoundError(
+                    'Dataset not found: {} ({})'.format(split, data_path))
+
+        src_dataset = data_utils.load_indexed_dataset(
+            prefix + suffix, s_dict, dataset_impl)
+        if truncate_source:
+            src_dataset = AppendTokenDataset(
+                TruncateDataset(
+                    StripTokenDataset(src_dataset, s_dict.eos()),
+                    max_source_positions - 1,
+                ),
+                s_dict.eos(),
+            )
+        src_datasets.append(src_dataset)
+
+        logger.info('{} {} {}-{} {} examples'.format(
+            data_path, split_k, src, tgt, len(src_datasets[-1])
+        ))
+
+        if not combine:
+            break
+
+    if len(src_datasets) == 1:
+        s_dataset = src_datasets[0]
+    else:
+        sample_ratios = [1] * len(src_datasets)
+        sample_ratios[0] = upsample_primary
+        s_dataset = ConcatDataset(src_datasets, sample_ratios)
+
+    if prepend_bos:
+        assert hasattr(s_dict, "bos_index")
+        src_dataset = PrependTokenDataset(src_dataset, s_dict.bos())
+
+    eos = None
+    if append_source_id:
+        src_dataset = AppendTokenDataset(
+            src_dataset, s_dict.index('[{}]'.format(src)))
+        eos = s_dict.index('[{}]'.format(src))
+
+    return src_dataset
 
 def load_pos_langpair_dataset(
     data_path, split,
@@ -54,37 +114,7 @@ def load_pos_langpair_dataset(
     max_target_positions, prepend_bos=False, load_alignments=False,
     truncate_source=False, append_source_id=False
     ):
-    """[summary]
 
-    Arguments:
-        data_path {[type]} -- [description]
-        split {[type]} -- [description]
-        src {[type]} -- [description]
-        src_dict {[type]} -- [description]
-        pos_graph {[str]} -- [name of pos graphs]
-        pos_anchor {[str]} -- [name of pos anchors]
-        tgt {[type]} -- [description]
-        tgt_dict {[type]} -- [description]
-        combine {[type]} -- [description]
-        dataset_impl {[type]} -- [description]
-        upsample_primary {[type]} -- [description]
-        left_pad_source {[type]} -- [description]
-        left_pad_target {[type]} -- [description]
-        max_source_positions {[type]} -- [description]
-        max_target_positions {[type]} -- [description]
-
-    Keyword Arguments:
-        prepend_bos {bool} -- [description] (default: {False})
-        load_alignments {bool} -- [description] (default: {False})
-        truncate_source {bool} -- [description] (default: {False})
-        append_source_id {bool} -- [description] (default: {False})
-
-    Raises:
-        FileNotFoundError: [description]
-
-    Returns:
-        [type] -- [description]
-    """
     # Check the existence of the file
     def split_exists(split, src, tgt, lang, data_path):
         filename = os.path.join(
@@ -227,7 +257,7 @@ def load_pos_langpair_dataset(
         pos_anchors_l.extend(pos_anchors)
 
     return POSGraphLanguagePairDataset(
-        src_dataset, src_dataset.sizes, src_dict, pos_graphs, anchors,
+        src_dataset, src_dataset.sizes, src_dict, anchors, pos_graphs,
         tgt_dataset, tgt_dataset_sizes, tgt_dict,
         left_pad_source=left_pad_source,
         left_pad_target=left_pad_target,
