@@ -10,8 +10,9 @@
             "name":"Python: generate",
             "type":"python",
             "request":"launch",
-            "program":"/home/zzc/ZZC_workspace/python_workspace/fairseq/fairseq_ori/generate.py",
+            "program":"/home5/zhangzhuocheng/lab/pos_graph/fairseq/generate.py",
             "console":"integratedTerminal",
+            "cwd": "${workspaceFolder}",
             "args": [
                 "data-bin/iwslt14.tokenized.de-en",
                 "--path", "checkpoints/checkpoint_best.pt",
@@ -28,9 +29,9 @@
             "type": "python",
             "request": "launch",
             "env": {
-                "DataPath": "/home/zzc/ZZC_workspace/python_workspace/fairseq/datasets/en_de/pos_graph"
+                "DataPath": "/home5/zhangzhuocheng/lab/pos_graph"
             },
-            "program": "/home/zzc/ZZC_workspace/python_workspace/fairseq/fairseq_ori/preprocess.py",
+            "program": "/home5/zhangzhuocheng/lab/pos_graph/fairseq/preprocess.py",
             "console": "integratedTerminal",
             "args": [
                 "--trainpref", "$DataPath/datasets/train.tok.clean.bpe.32000",
@@ -48,10 +49,12 @@
             "name": "Python: translate",
             "type": "python",
             "request": "launch",
-            "program": "/home/zzc/ZZC_workspace/python_workspace/fairseq/fairseq_ori/train.py",
+            "program": "/home5/zhangzhuocheng/lab/pos_graph/fairseq/train.py",
             "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {"CUDA_VISIBLE_DEVICES": "0"},
             "args": [
-                "/home/zzc/ZZC_workspace/python_workspace/fairseq/datasets/en_de/pos_graph/data-bin",
+                "/home5/zhangzhuocheng/lab/pos_graph/datasets/data-bin",
                 "--task", "pos_translation",
                 "--arch", "gnn_transformer_base",
                 "--share-decoder-input-output-embed",

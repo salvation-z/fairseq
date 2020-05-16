@@ -317,6 +317,8 @@ class TransGnnModel(FairseqEncoderDecoderModel):
         encoder_out = self.encoder(
             src_tokens,
             src_lengths=src_lengths,
+            src_anchors=src_anchors,
+            graphs=graphs,
             cls_input=cls_input,
             return_all_hiddens=return_all_hiddens,
         )

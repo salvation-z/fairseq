@@ -34,6 +34,16 @@ EVAL_BLEU_ORDER = 4
 
 logger = logging.getLogger(__name__)
 
+def load_data_base(
+    data_path, split,
+    src, src_dict,
+    tgt, tgt_dict,
+    combine, dataset_impl, upsample_primary,
+    left_pad_source, left_pad_target, max_source_positions,
+    max_target_positions, prepend_bos=False, load_alignments=False,
+    truncate_source=False, append_source_id=False
+    ):
+    pass
 
 def load_pos_langpair_dataset(
     data_path, split,
@@ -43,7 +53,7 @@ def load_pos_langpair_dataset(
     left_pad_source, left_pad_target, max_source_positions,
     max_target_positions, prepend_bos=False, load_alignments=False,
     truncate_source=False, append_source_id=False
-):
+    ):
     """[summary]
 
     Arguments:
@@ -166,7 +176,6 @@ def load_pos_langpair_dataset(
     tgt_dataset_sizes = tgt_dataset.sizes if tgt_dataset is not None else None
 
     # Load POS Graph
-
     def graph_exist(data_path, split, src, tgt, lang):
         existence = True
         row_path = os.path.join(data_path, '{}.{}-{}.{}'.format(split, src, tgt, src)) + '.row'
@@ -204,7 +213,7 @@ def load_pos_langpair_dataset(
         pbar = tqdm(total=len(pos_cols))
         for n, (row, col) in enumerate(zip(pos_rows, pos_cols)):
             pos_row = [eval(i) for i in row.strip().split()]
-            pos_col = [eval(i) for i in row.strip().split()]
+            pos_col = [eval(i) for i in col.strip().split()]
             pos_graphs.append((pos_row, pos_col))
             pbar.update()
         pbar.close()
