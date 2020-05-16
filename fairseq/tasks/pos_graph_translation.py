@@ -41,7 +41,7 @@ def load_data_base(
     max_source_positions, suffix, 
     prepend_bos=False,
     truncate_source=False, append_source_id=False
-    ):
+):
 
     def split_exists(split, src, tgt, lang, data_path):
         filename = os.path.join(
@@ -104,6 +104,42 @@ def load_data_base(
         eos = s_dict.index('[{}]'.format(src))
 
     return src_dataset
+
+def pos_dataset_loader(
+    data_path, split,
+    src, src_dict,
+    tgt, tgt_dict,
+    combine, dataset_impl, upsample_primary,
+    left_pad_source, left_pad_target, max_source_positions,
+    max_target_positions, prepend_bos=False, load_alignments=False,
+    truncate_source=False, append_source_id=False
+):
+
+    src_dataset = load_data_base(data_path, split,
+                                src, src_dict, tgt,
+                                combine, dataset_impl, upsample_primary,
+                                max_source_positions, src,
+                                prepend_bos, truncate_source, append_source_id)
+    tgt_dataset = load_data_base(data_path, split,
+                                src, tgt_dict, tgt,
+                                combine, dataset_impl, upsample_primary,
+                                max_source_positions, tgt,
+                                prepend_bos, truncate_source, append_source_id)
+    row_dataset = load_data_base(data_path, split,
+                                src, row_dict, tgt,
+                                combine, dataset_impl, upsample_primary,
+                                max_source_positions, 'row',
+                                prepend_bos, truncate_source, append_source_id)
+    row_dataset = load_data_base(data_path, split,
+                                src, row_dict, tgt,
+                                combine, dataset_impl, upsample_primary,
+                                max_source_positions, 'col',
+                                prepend_bos, truncate_source, append_source_id)
+    anchor_dataset = load_data_base(data_path, split,
+                                    src, row_dict, tgt,
+                                    combine, dataset_impl, upsample_primary,
+                                    max_source_positions, 'anchor',
+                                    prepend_bos, truncate_source, append_source_id)
 
 def load_pos_langpair_dataset(
     data_path, split,
