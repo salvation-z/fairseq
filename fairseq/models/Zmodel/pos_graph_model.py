@@ -79,10 +79,10 @@ class GATLayer(nn.Module):
         # Form the graph with COO Tensor
         pyg_graphs = []
         for n, graph in enumerate(graphs):
-            pyg_graph = PyG.data.Data.from_data_list(x=torch.squeeze(
+            pyg_graph = PyG.data.Data(x=torch.squeeze(
                 x[:, n, :], dim=1), edge_index=graph)
             pyg_graphs.append(pyg_graph)
-        pyg_graphs = PyG.data.Batch(pyg_graphs)
+        pyg_graphs = PyG.data.Batch.from_data_list(pyg_graphs)
 
         # Calc Conv
         conv_x = F.dropout(pyg_graphs.x, p=self.__drop__,

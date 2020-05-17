@@ -290,10 +290,12 @@ def load_pos_langpair_dataset(
             anchors.append([eval(i) for i in line.strip().split()])
 
         pos_graphs_l.extend(pos_graphs)
-        pos_anchors_l.extend(pos_anchors)
+        pos_anchors_l.extend(anchors)
+
+    assert (len(pos_anchors_l) == len(pos_graphs_l)) and (src_dataset.sizes == len(pos_anchors_l))
 
     return POSGraphLanguagePairDataset(
-        src_dataset, src_dataset.sizes, src_dict, anchors, pos_graphs,
+        src_dataset, src_dataset.sizes, src_dict, pos_anchors_l, pos_graphs_l,
         tgt_dataset, tgt_dataset_sizes, tgt_dict,
         left_pad_source=left_pad_source,
         left_pad_target=left_pad_target,
