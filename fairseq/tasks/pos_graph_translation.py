@@ -292,7 +292,7 @@ def load_pos_langpair_dataset(
         pos_graphs_l.extend(pos_graphs)
         pos_anchors_l.extend(anchors)
 
-    assert (len(pos_anchors_l) == len(pos_graphs_l)) and (src_dataset.sizes == len(pos_anchors_l))
+    assert (len(pos_anchors_l) == len(pos_graphs_l)) and (len(src_dataset.sizes) == len(pos_anchors_l))
 
     return POSGraphLanguagePairDataset(
         src_dataset, src_dataset.sizes, src_dict, pos_anchors_l, pos_graphs_l,
