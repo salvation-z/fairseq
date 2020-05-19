@@ -42,7 +42,7 @@
                 "--source-lang", "en", 
                 "--target-lang", "de",
                 "--destdir", "$DataPath/data-bin", 
-                "--joined-dictionary", "True"
+                "--joined-dictionary"
             ]   
         },
 
@@ -60,13 +60,13 @@
             "program": "/home5/zhangzhuocheng/lab/pos_graph/fairseq/preprocess.py",
             "console": "integratedTerminal",
             "args": [
-                "--trainpref", "$DataPath/datasets/tiny_raw/train.tok.clean.bpe.32000",
-                "--validpref", "$DataPath/datasets/tiny_raw/newstest2016.tok.bpe.32000",
-                "--testpref", "$DataPath/datasets/tiny_raw/newstest2015.tok.bpe.32000,$DataPath/datasets/tiny_raw/newstest2014.tok.bpe.32000,$DataPath/datasets/tiny_raw/newstest2013.tok.bpe.32000,$DataPath/datasets/tiny_raw/newstest2012.tok.bpe.32000,$DataPath/datasets/tiny_raw/newstest2011.tok.bpe.32000,$DataPath/datasets/tiny_raw/newstest2010.tok.bpe.32000,$DataPath/datasets/tiny_raw/newstest2009.tok.bpe.32000", 
+                "--trainpref", "datasets/tiny_raw/train.tok.clean.bpe.32000",
+                "--validpref", "datasets/tiny_raw/newstest2016.tok.bpe.32000",
+                "--testpref", "datasets/tiny_raw/newstest2015.tok.bpe.32000,datasets/tiny_raw/newstest2014.tok.bpe.32000,datasets/tiny_raw/newstest2013.tok.bpe.32000,datasets/tiny_raw/newstest2012.tok.bpe.32000,datasets/tiny_raw/newstest2011.tok.bpe.32000,datasets/tiny_raw/newstest2010.tok.bpe.32000,datasets/tiny_raw/newstest2009.tok.bpe.32000", 
                 "--source-lang", "en", 
                 "--target-lang", "de",
-                "--destdir", "$DataPath/datasets/tiny-bin", 
-                "--joined-dictionary", "True"
+                "--destdir", "datasets/tiny-bin", 
+                "--joined-dictionary"
             ]   
         },
 
