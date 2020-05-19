@@ -64,7 +64,7 @@ class GATLayer(nn.Module):
                 self.layers.append(GATConv(args.gnn_hidden_states, int(args.gnn_hidden_states/8),
                                            heads=args.gnn_heads, dropout=args.gnn_dropout_rate))
 
-    def forward(self, graphs, x):
+    def forward(self, graphs, x, valid=True):
         """forward
 
         Arguments:
@@ -74,6 +74,10 @@ class GATLayer(nn.Module):
         Returns:
             Tensor -- Output of Graph Conv layers, shape=[seq_len, bsz, embed_dim]
         """
+
+        if(not valid):
+            return x
+
         seq_len, bsz, embed_dim = x.shape
 
         # Form the graph with COO Tensor
@@ -554,7 +558,7 @@ class GNNTransformerEncoder(FairseqEncoder):
                     encoder_states.append(x)
 
         # GNN layers
-        x = self.gnn_layers(graphs, x)
+        x = self.gnn_layers(graphs, x, False)
 
         # latter encoder layers
         for layer in self.latter_layers:
