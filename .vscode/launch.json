@@ -36,13 +36,14 @@
             "program": "/home5/zhangzhuocheng/lab/pos_graph/fairseq/preprocess.py",
             "console": "integratedTerminal",
             "args": [
-                "--trainpref", "$DataPath/datasets/train.tok.clean.bpe.32000",
-                "--validpref", "$DataPath/datasets/newstest2016.tok.bpe.32000",
-                "--testpref", "$DataPath/datasets/newstest2015.tok.bpe.32000,$DataPath/datasets/newstest2014.tok.bpe.32000,$DataPath/datasets/newstest2013.tok.bpe.32000,$DataPath/datasets/newstest2012.tok.bpe.32000,$DataPath/datasets/newstest2011.tok.bpe.32000,$DataPath/datasets/newstest2010.tok.bpe.32000,$DataPath/datasets/newstest2009.tok.bpe.32000", 
+                "--trainpref", "datasets/train.tok.clean.bpe.32000",
+                "--validpref", "datasets/newstest2016.tok.bpe.32000",
+                "--testpref", "datasets/newstest2015.tok.bpe.32000,datasets/newstest2014.tok.bpe.32000,datasets/newstest2013.tok.bpe.32000,datasets/newstest2012.tok.bpe.32000,datasets/newstest2011.tok.bpe.32000,datasets/newstest2010.tok.bpe.32000,datasets/newstest2009.tok.bpe.32000", 
                 "--source-lang", "en", 
                 "--target-lang", "de",
-                "--destdir", "$DataPath/data-bin", 
-                "--joined-dictionary"
+                "--destdir", "data-bin", 
+                "--joined-dictionary",
+                "--workers", "16"
             ]   
         },
 
@@ -66,7 +67,8 @@
                 "--source-lang", "en", 
                 "--target-lang", "de",
                 "--destdir", "datasets/tiny-bin", 
-                "--joined-dictionary"
+                "--joined-dictionary",
+                "--workers", "16"
             ]   
         },
 
