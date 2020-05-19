@@ -24,6 +24,8 @@
         
         // Launch setting for data preprocess
         // Change it for every new datasets
+        // To be changed:
+        // 1. DataPath
         {
             "name": "Python: preprocess",
             "type": "python",
@@ -40,13 +42,42 @@
                 "--source-lang", "en", 
                 "--target-lang", "de",
                 "--destdir", "$DataPath/data-bin", 
+                "--joined-dictionary", "True"
+            ]   
+        },
+
+        // Launch setting for data preprocess
+        // Change it for every new datasets
+        // To be changed:
+        // 1. DataPath
+        {
+            "name": "Python: preprocess tiny",
+            "type": "python",
+            "request": "launch",
+            "env": {
+                "DataPath": "/home5/zhangzhuocheng/lab/pos_graph"
+            },
+            "program": "/home5/zhangzhuocheng/lab/pos_graph/fairseq/preprocess.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--trainpref", "$DataPath/datasets/tiny_raw/train.tok.clean.bpe.32000",
+                "--validpref", "$DataPath/datasets/tiny_raw/newstest2016.tok.bpe.32000",
+                "--testpref", "$DataPath/datasets/tiny_raw/newstest2015.tok.bpe.32000,$DataPath/datasets/tiny_raw/newstest2014.tok.bpe.32000,$DataPath/datasets/tiny_raw/newstest2013.tok.bpe.32000,$DataPath/datasets/tiny_raw/newstest2012.tok.bpe.32000,$DataPath/datasets/tiny_raw/newstest2011.tok.bpe.32000,$DataPath/datasets/tiny_raw/newstest2010.tok.bpe.32000,$DataPath/datasets/tiny_raw/newstest2009.tok.bpe.32000", 
+                "--source-lang", "en", 
+                "--target-lang", "de",
+                "--destdir", "$DataPath/datasets/tiny-bin", 
+                "--joined-dictionary", "True"
             ]   
         },
 
         // Launch setting for training
         // Change this before running
+        // To be changed:
+        // 1. CUDA_VISIBLE_DEVICES
+        // 2. Dataset path
+        // 3. save_dir
         {
-            "name": "Python: translate",
+            "name": "Python: en_de translate",
             "type": "python",
             "request": "launch",
             "program": "/home5/zhangzhuocheng/lab/pos_graph/fairseq/train.py",
@@ -57,26 +88,27 @@
                 "/home5/zhangzhuocheng/lab/pos_graph/datasets/data-bin",
                 "--task", "pos_translation",
                 "--arch", "gnn_transformer_base",
-                "--share-decoder-input-output-embed",
+                "--save-dir", "/home5/zhangzhuocheng/lab/pos_graph/models/pos_base/",
                 "--optimizer", "adam",
                 "--adam-betas", "(0.9, 0.98)",
                 "--clip-norm", "0.0",
-                "--lr", "5e-4",
+                "--lr", "7e-4",
                 "--lr-scheduler", "inverse_sqrt",
                 "--warmup-updates", "4000",
-                "--dropout", "0.3",
+                "--warmup-init-lr", "1e-07",
+                "--min-lr","1e-09",
+                "--dropout", "0.1",
                 "--weight-decay", "0.0001",
                 "--criterion", "label_smoothed_cross_entropy",
                 "--label-smoothing", "0.1",
                 "--max-tokens", "4096",
-                "--eval-bleu",
-                "--eval-bleu-args", "{\"beam\": 5, \"max_len_a\": 1.2, \"max_len_b\": 10}",
-                "--eval-bleu-detok", "moses",
-                "--eval-bleu-remove-bpe",
-                "--eval-bleu-print-samples",
-                "--best-checkpoint-metric", "bleu",
-                "--maximize-best-checkpoint-metric",
-                "--num-workers", "0"
+                "--update-freq", "8",
+                "--log-format", "json",
+                "--log-interval", "100",
+                "--save-interval-updates", "1000",
+                "--max-update", "150000",
+                "--keep-interval-updates", "5",
+                "--keep-last-epochs", "5"
             ]
         },
         
