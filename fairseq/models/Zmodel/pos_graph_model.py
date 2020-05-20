@@ -29,6 +29,8 @@ from ..transformer import TransformerDecoder
 DEFAULT_MAX_SOURCE_POSITIONS = 1024
 DEFAULT_MAX_TARGET_POSITIONS = 1024
 
+
+
 # TODO:
 # 1. add args for GAT Layers √
 # 2. add support for different kinds of GraphConv
@@ -55,13 +57,13 @@ class GATLayer(nn.Module):
         self.layers = nn.ModuleList([])
         for n in range(args.gnn_layers):
             if(n == 0):
-                self.layers.append(GATConv(args.encoder_embed_dim, int(args.gnn_hidden_states/8),
+                self.layers.append(GATConv(args.encoder_embed_dim, int(args.gnn_hidden_states/args.gnn_heads),
                                            heads=args.gnn_heads, dropout=args.gnn_dropout_rate))
             elif(n == args.gnn_layers-1):
                 self.layers.append(GATConv(args.gnn_hidden_states, args.encoder_embed_dim,
                                            heads=args.gnn_heads, dropout=args.gnn_dropout_rate, concat=False))
             else:
-                self.layers.append(GATConv(args.gnn_hidden_states, int(args.gnn_hidden_states/8),
+                self.layers.append(GATConv(args.gnn_hidden_states, int(args.gnn_hidden_states/args.gnn_heads),
                                            heads=args.gnn_heads, dropout=args.gnn_dropout_rate))
 
     def forward(self, graphs, x, valid=True):
@@ -93,6 +95,68 @@ class GATLayer(nn.Module):
                            training=self.training)
         for layer in self.layers:
             conv_x = F.elu(layer(conv_x, pyg_graphs.edge_index))
+
+        # Calc outputs
+        output = conv_x.view(seq_len, bsz, embed_dim)
+        return output
+
+class GCNLayer(nn.Module):
+
+    def __init__(self, args):
+        """GCNLayer, A two layers GAT Network
+
+        Arguments:
+            args.gnn_layers {int>=2} -- number of gnn layers
+            args.gnn_hidden_states {int} -- hidden state of attention(each attention head got hidden_state state)
+            args.gnn_dropout_rate {float} -- [dropout rate of GAT layers] (default: {0.6})
+        
+        Virtual arguments:
+            args.gnn_input_features {int} -- input features = args.encoder-embed-dim
+            args.gnn_output_features {int} -- output features = args.encoder-embed-dim
+        """
+        super(GCNLayer, self).__init__()
+
+        self.__drop__ = args.gnn_dropout_rate
+
+        self.layers = nn.ModuleList([])
+        for n in range(args.gnn_layers):
+            if(n == 0):
+                self.layers.append(GCNConv(args.encoder_embed_dim, args.gnn_hidden_states))
+            elif(n == args.gnn_layers-1):
+                self.layers.append(GCNConv(args.gnn_hidden_states, args.encoder_embed_dim))
+            else:
+                self.layers.append(GCNConv(args.gnn_hidden_states, args.gnn_hidden_states))
+
+    def forward(self, graphs, x, valid=True):
+        """forward
+
+        Arguments:
+            graphs List[Tensor] -- Contain a list of tensor which is the COO format of the graph
+            x Tensor -- Output of transformer layers, shape=[seq_len, bsz, embed_dim]
+
+        Returns:
+            Tensor -- Output of Graph Conv layers, shape=[seq_len, bsz, embed_dim]
+        """
+
+        if(not valid):
+            return x
+
+        seq_len, bsz, embed_dim = x.shape
+        assert bsz == len(graphs)
+
+        # Form the graph with COO Tensor
+        pyg_graphs = []
+        for n, graph in enumerate(graphs):
+            pyg_graph = PyG.data.Data(x=torch.squeeze(
+                x[:, n, :], dim=1), edge_index=graph)
+            pyg_graphs.append(pyg_graph)
+        pyg_graphs = PyG.data.Batch.from_data_list(pyg_graphs)
+
+        # Calc Conv
+        conv_x = pyg_graphs.x
+        for layer in self.layers:
+            conv_x = F.relu(layer(conv_x, pyg_graphs.edge_index))
+            conv_x = F.dropout(conv_x, p=self.__drop__, training=self.training)
 
         # Calc outputs
         output = conv_x.view(seq_len, bsz, embed_dim)
@@ -165,6 +229,8 @@ class TransGnnModel(FairseqEncoderDecoderModel):
         parser.add_argument('--encoder-learned-pos', action='store_true',
                             help='use learned positional embeddings in the encoder')
         # args for GNN
+        parser.add_argument('--gnn-type', type=str,
+                            help='type of gnn conv layers')
         parser.add_argument('--gnn-layers', type=int,
                             help='layers of gnn')
         parser.add_argument('--gnn-heads', type=int,
@@ -173,6 +239,8 @@ class TransGnnModel(FairseqEncoderDecoderModel):
                             help='hidden state of gnn layers')
         parser.add_argument('--gnn-dropout-rate', type=float,
                             help='drop out rate of gnn layers')
+        parser.add_argument('--gnn-valid', type=bool,
+                            help='whether make gnn layers valid')
         # args for decoder
         parser.add_argument('--decoder-embed-path', type=str, metavar='STR',
                             help='path to pre-trained decoder embedding')
@@ -381,6 +449,7 @@ def base_architecture(args):
     args.gnn_heads = getattr(args, 'gnn_heads', 8)
     args.gnn_hidden_states = getattr(args, 'gnn_hidden_states', 512)
     args.gnn_layers = getattr(args, 'gnn_layers', 2)
+    args.gnn_type = getattr(args, 'gnn_type', 'gcn')
 
     args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 8)
     args.encoder_normalize_before = getattr(
@@ -470,7 +539,7 @@ class GNNTransformerEncoder(FairseqEncoder):
             args, "layer_wise_attention", False)
 
         self.former_layers = nn.ModuleList([])
-        self.gnn_layers = GATLayer(args)
+        self.gnn_layers = GNN_TYPE[args.gnn_type](args)
         self.latter_layers = nn.ModuleList([])
         self.former_layers.extend(
             [self.build_encoder_layer(args)
@@ -558,7 +627,7 @@ class GNNTransformerEncoder(FairseqEncoder):
                     encoder_states.append(x)
 
         # GNN layers
-        x = self.gnn_layers(graphs, x, False)
+        x = self.gnn_layers(graphs, x, True)
 
         # latter encoder layers
         for layer in self.latter_layers:
@@ -677,6 +746,10 @@ class GNNTransformerEncoder(FairseqEncoder):
             state_dict[version_key] = torch.Tensor([1])
         return state_dict
 
+GNN_TYPE={
+    'gcn':GCNLayer,
+    'gat':GATLayer,
+}
 
 # class POSGNNDecoder(FairseqDecoder):
 
