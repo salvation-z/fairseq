@@ -26,13 +26,12 @@ from torch_geometric.nn import GATConv, GCNConv, GINConv
 
 import codecs
 from ..transformer import TransformerDecoder
-from .pos_graph_arch import gat_architecture, gcn_architecture, base_architecture
 
 DEFAULT_MAX_SOURCE_POSITIONS = 1024
 DEFAULT_MAX_TARGET_POSITIONS = 1024
 
 class simple_detok:
-    def __init__(self, dict_path='~/lab/pos_graph/datasets/tiny-bin/dict.en.txt'):
+    def __init__(self, dict_path='/home5/zhangzhuocheng/lab/pos_graph/datasets/tiny-bin/dict.en.txt'):
         super().__init__()
         dic_raw = codecs.open(dict_path, 'r', 'utf-8').readlines()
         self.__dic__ = {}
@@ -42,7 +41,7 @@ class simple_detok:
             self.__dic__[key] = value
 
     def decode_tok(self, key):
-        return self.__dic__[key]
+        return self.__dic__[int(key)]
 
     def decode_line(self, tensor):
         result = []
@@ -343,8 +342,8 @@ class TransGnnModel(FairseqEncoderDecoderModel):
                             help='if True, dont scale embeddings')
         # fmt: on
         # debug
-        parser.add_argument('--debug-mode', action='store_true',
-                            help='Whether enable debug mode')
+        # parser.add_argument('--debug-mode', action='store_true',
+        #                     help='Whether enable debug mode')
 
     @classmethod
     def build_model(cls, args, task):
@@ -605,7 +604,8 @@ class GNNTransformerEncoder(FairseqEncoder):
             return_all_hiddens = True
 
         if(self.debug_mode):
-            sent = detoker.decode_batch(src_tokens)
+            # sent = detoker.decode_batch(src_tokens.int().cpu())
+            pass
 
         x, encoder_embedding = self.forward_embedding(src_tokens)
 
@@ -752,3 +752,4 @@ GNN_TYPE={
     'none':NoGNN,
 }
 
+from .pos_graph_arch import gat_architecture, gcn_architecture, base_architecture

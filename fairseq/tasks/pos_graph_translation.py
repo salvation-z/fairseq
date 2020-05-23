@@ -267,11 +267,15 @@ class POSTranslationTask(FairseqTask):
         parser.add_argument('--eval-bleu-print-samples', action='store_true',
                             help='print sample generations during validation')
         # fmt: on
+        # Debug
+        parser.add_argument('--debug-mode', action='store_true',
+                            help='Whether enable debug mode')
 
     def __init__(self, args, src_dict, tgt_dict):
         super().__init__(args)
         self.src_dict = src_dict
         self.tgt_dict = tgt_dict
+        self.__debug_mode__ = args.debug_mode
 
     @classmethod
     def setup_task(cls, args, **kwargs):
@@ -356,6 +360,59 @@ class POSTranslationTask(FairseqTask):
             self.sequence_generator = self.build_generator(
                 Namespace(**gen_args))
         return super().build_model(args)
+
+    def train_step(
+        self, sample, model, criterion, optimizer, update_num, ignore_grad=False
+    ):
+        """
+        Do forward and backward, and return the loss as computed by *criterion*
+        for the given *model* and *sample*.
+
+        Args:
+            sample (dict): the mini-batch. The format is defined by the
+                :class:`~fairseq.data.FairseqDataset`.
+            model (~fairseq.models.BaseFairseqModel): the model
+            criterion (~fairseq.criterions.FairseqCriterion): the criterion
+            optimizer (~fairseq.optim.FairseqOptimizer): the optimizer
+            update_num (int): the current update
+            ignore_grad (bool): multiply loss by 0 if this is set to True
+
+        Returns:
+            tuple:
+                - the loss
+                - the sample size, which is used as the denominator for the
+                  gradient
+                - logging outputs to display while training
+        """
+        model.train()
+        model.set_num_updates(update_num)
+        loss, sample_size, logging_output = criterion(model, sample)
+
+        if(self.__debug_mode__):
+
+            def decode(batch, escape_unk=False):
+                result = []
+                for toks in batch:
+                    s = self.tgt_dict.string(
+                        toks.int().cpu(),
+                        self.args.eval_bleu_remove_bpe,
+                        escape_unk=escape_unk,
+                    )
+                    if self.tokenizer:
+                        s = self.tokenizer.decode(s)
+                    result.append(s)
+                return result
+
+            feed = sample['net_input']
+            toks = feed['src_tokens']
+            anchors = feed['src_anchors']
+            sentences = decode(toks)
+            _ = 1 + 1
+
+        if ignore_grad:
+            loss *= 0
+        optimizer.backward(loss)
+        return loss, sample_size, logging_output
 
     def valid_step(self, sample, model, criterion):
         loss, sample_size, logging_output = super().valid_step(sample, model, criterion)
