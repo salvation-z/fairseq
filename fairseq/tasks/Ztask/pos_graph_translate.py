@@ -3,6 +3,11 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+# New data load policy
+# Not Done yet
+# TODO:
+# Make the new data loader avaliable
+
 from argparse import Namespace
 import json
 from tqdm import tqdm

@@ -159,7 +159,8 @@
                 "--eval-bleu-detok", "moses",
                 "--eval-bleu-remove-bpe",
                 "--eval-bleu-print-samples", 
-                "--best-checkpoint-metric", "bleu"
+                "--best-checkpoint-metric", "bleu",
+                "--debug-mode"
             ]
         },
 

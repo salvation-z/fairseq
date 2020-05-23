@@ -24,195 +24,12 @@ from fairseq.modules import (MultiheadAttention,
 import torch_geometric as PyG
 from torch_geometric.nn import GATConv, GCNConv, GINConv
 
-import codecs
 from ..transformer import TransformerDecoder
 from .pos_graph_arch import gat_architecture, gcn_architecture, base_architecture
+from .pos_graph_model import GATLayer, GCNLayer, NoGNN
 
 DEFAULT_MAX_SOURCE_POSITIONS = 1024
 DEFAULT_MAX_TARGET_POSITIONS = 1024
-
-class simple_detok:
-    def __init__(self, dict_path='~/lab/pos_graph/datasets/tiny-bin/dict.en.txt'):
-        super().__init__()
-        dic_raw = codecs.open(dict_path, 'r', 'utf-8').readlines()
-        self.__dic__ = {}
-        for line in dic_raw:
-            key = eval(line.strip().split()[1])
-            value = line.strip().split()[0]
-            self.__dic__[key] = value
-
-    def decode_tok(self, key):
-        return self.__dic__[key]
-
-    def decode_line(self, tensor):
-        result = []
-        for i in tensor:
-            result.append(self.decode_tok(i))
-        return result
-
-    def decode_batch(self, batch):
-        result = []
-        for i in batch:
-            result.append(self.decode_line(i))
-        return result
-
-detoker = simple_detok()
-
-class GATLayer(nn.Module):
-
-    def __init__(self, args):
-        """GATLayer, A two layers GAT Network
-
-        Arguments:
-            args.gnn_layers {int>=2} -- number of gnn layers
-            args.gnn_hidden_states {int} -- hidden state of attention(each attention head got hidden_state/heads state)
-            args.gnn_heads {int} -- heads of multihead-attention
-            args.gnn_dropout_rate {float} -- [dropout rate of GAT layers] (default: {0.6})
-        
-        Virtual arguments:
-            args.gnn_input_features {int} -- input features = args.encoder-embed-dim
-            args.gnn_output_features {int} -- output features = args.encoder-embed-dim
-        """
-        super(GATLayer, self).__init__()
-
-        self.__drop__ = args.gnn_dropout_rate
-
-        self.layers = nn.ModuleList([])
-        if(args.gnn_layers > 1):
-            for n in range(args.gnn_layers):
-                if(n == 0):
-                    self.layers.append(GATConv(args.former_encoder_dim, int(args.gnn_hidden_states/args.gnn_heads),
-                                            heads=args.gnn_heads, dropout=args.gnn_dropout_rate))
-                elif(n == args.gnn_layers-1):
-                    self.layers.append(GATConv(args.gnn_hidden_states, args.latter_encoder_dim,
-                                            heads=args.gnn_heads, dropout=args.gnn_dropout_rate, concat=False))
-                else:
-                    self.layers.append(GATConv(args.gnn_hidden_states, int(args.gnn_hidden_states/args.gnn_heads),
-                                            heads=args.gnn_heads, dropout=args.gnn_dropout_rate))
-        else:
-            self.layers.append(GATConv(args.former_encoder_dim, args.latter_encoder_dim,
-                                       heads=args.gnn_heads, dropout=args.gnn_dropout_rate, concat=False))
-
-    def forward(self, graphs, x, valid=True):
-        """forward
-
-        Arguments:
-            graphs List[Tensor] -- Contain a list of tensor which is the COO format of the graph
-            x Tensor -- Output of transformer layers, shape=[seq_len, bsz, embed_dim]
-
-        Returns:
-            Tensor -- Output of Graph Conv layers, shape=[seq_len, bsz, embed_dim]
-        """
-
-        if(not valid):
-            return x
-
-        seq_len, bsz, embed_dim = x.shape
-
-        # Form the graph with COO Tensor
-        pyg_graphs = []
-        for n, graph in enumerate(graphs):
-            pyg_graph = PyG.data.Data(x=torch.squeeze(
-                x[:, n, :], dim=1), edge_index=graph)
-            pyg_graphs.append(pyg_graph)
-        pyg_graphs = PyG.data.Batch.from_data_list(pyg_graphs)
-
-        # Calc Conv
-        conv_x = F.dropout(pyg_graphs.x, p=self.__drop__,
-                           training=self.training)
-        for layer in self.layers:
-            conv_x = F.elu(layer(conv_x, pyg_graphs.edge_index))
-
-        # Calc outputs
-        output = conv_x.view(seq_len, bsz, embed_dim)
-        return output
-
-class NoGNN(nn.Module):
-
-    def __init__(self, args):
-        """
-        A wrapper for nothing
-        """
-        super(NoGNN, self).__init__()
-
-    def forward(self, graphs, x, valid=True):
-        """
-        Arguments:
-            graphs List[Tensor] -- Contain a list of tensor which is the COO format of the graph
-            x Tensor -- Output of transformer layers, shape=[seq_len, bsz, embed_dim]
-
-        Returns:
-            Tensor -- Output of Graph Conv layers, shape=[seq_len, bsz, embed_dim]
-        """
-        return x
-
-class GCNLayer(nn.Module):
-
-    def __init__(self, args):
-        """GCNLayer, A two layers GAT Network
-
-        Arguments:
-            args.gnn_layers {int>=2} -- number of gnn layers
-            args.gnn_hidden_states {int} -- hidden state of attention(each attention head got hidden_state state)
-            args.gnn_dropout_rate {float} -- [dropout rate of GAT layers] (default: {0.6})
-        
-        Virtual arguments:
-            args.gnn_input_features {int} -- input features = args.encoder-embed-dim
-            args.gnn_output_features {int} -- output features = args.encoder-embed-dim
-        """
-        super(GCNLayer, self).__init__()
-
-        self.__drop__ = args.gnn_dropout_rate
-
-        self.layers = nn.ModuleList([])
-        if(args.gnn_layers > 1):
-            for n in range(args.gnn_layers):
-                if(n == 0):
-                    self.layers.append(GCNConv(args.former_encoder_dim, args.gnn_hidden_states))
-                elif(n == args.gnn_layers-1):
-                    self.layers.append(GCNConv(args.gnn_hidden_states, args.latter_encoder_dim))
-                else:
-                    self.layers.append(GCNConv(args.gnn_hidden_states, args.gnn_hidden_states))
-        else:
-            self.layers.append(GCNConv(args.former_encoder_dim, args.latter_encoder_dim))
-
-    def forward(self, graphs, x, valid=True):
-        """forward
-
-        Arguments:
-            graphs List[Tensor] -- Contain a list of tensor which is the COO format of the graph
-            x Tensor -- Output of transformer layers, shape=[seq_len, bsz, embed_dim]
-
-        Returns:
-            Tensor -- Output of Graph Conv layers, shape=[seq_len, bsz, embed_dim]
-        """
-
-        if(not valid):
-            return x
-
-        seq_len, bsz, embed_dim = x.shape
-        assert bsz == len(graphs)
-
-        # Form the graph with COO Tensor
-        pyg_graphs = []
-        for n, graph in enumerate(graphs):
-            pyg_graph = PyG.data.Data(x=torch.squeeze(
-                x[:, n, :], dim=1), edge_index=graph)
-            pyg_graphs.append(pyg_graph)
-        pyg_graphs = PyG.data.Batch.from_data_list(pyg_graphs)
-
-        assert pyg_graphs.x.equal(torch.reshape(x.transpose(0, 1), (-1, embed_dim)))
-        assert pyg_graphs.x.view(bsz, seq_len, embed_dim).transpose(0, 1).equal(x)
-
-        # Calc Conv
-        conv_x = pyg_graphs.x
-        for layer in self.layers:
-            conv_x = F.relu(layer(conv_x, pyg_graphs.edge_index))
-            conv_x = F.dropout(conv_x, p=self.__drop__, training=self.training)
-
-        # Calc outputs
-        output = conv_x.view(bsz, seq_len, embed_dim).transpose(0, 1)
-        return output
 
 
 # TODO:
@@ -227,11 +44,10 @@ class GCNLayer(nn.Module):
 # 3.是利用transformer Encoder写，这种结构最完美，可惜有点难搞（但是可以复制粘贴？我想用这个了~）
 
 
-@register_model("gnn_transformer")
-class TransGnnModel(FairseqEncoderDecoderModel):
+@register_model("gnn_transformer_b")
+class TransGnnModelB(FairseqEncoderDecoderModel):
     """
-    Transformer model from `"Attention Is All You Need" (Vaswani, et al, 2017)
-    <https://arxiv.org/abs/1706.03762>`_.
+    Transformer model with gnn
 
     Args:
         encoder (TransformerEncoder): the encoder
@@ -342,9 +158,6 @@ class TransGnnModel(FairseqEncoderDecoderModel):
         parser.add_argument('--no-scale-embedding', action='store_true',
                             help='if True, dont scale embeddings')
         # fmt: on
-        # debug
-        parser.add_argument('--debug-mode', action='store_true',
-                            help='Whether enable debug mode')
 
     @classmethod
     def build_model(cls, args, task):
@@ -556,8 +369,6 @@ class GNNTransformerEncoder(FairseqEncoder):
         else:
             self.layernorm_embedding = None
 
-        self.debug_mode = getattr(args, "debug_mode", False)
-
     def build_encoder_layer(self, args):
         return TransformerEncoderLayer(args)
 
@@ -603,9 +414,6 @@ class GNNTransformerEncoder(FairseqEncoder):
         """
         if self.layer_wise_attention:
             return_all_hiddens = True
-
-        if(self.debug_mode):
-            sent = detoker.decode_batch(src_tokens)
 
         x, encoder_embedding = self.forward_embedding(src_tokens)
 
