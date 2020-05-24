@@ -80,13 +80,11 @@ def collate_with_graph(
 
     # Getting Graph data
     # Data is not formed into PyG dataset because nodes data is not computed yet
-    graph_coos = [torch.tensor(i['graph']) for i in samples]
-    src_anchors = [torch.tensor(i['anchor']) for i in samples]
-    # pyg_datasets = []
-    # for coo in graph_coos:
-    #     graph_coo = PyG.data.Data(edge_index=torch.tensor(graph_coos))
-    #     pyg_datasets.append(graph_coo)
-    # pyg_batch = PyG.data.Batch(pyg_datasets)
+    graph_coos = np.array([torch.tensor(i['graph']) for i in samples])
+    src_anchors = np.array([torch.tensor(i['anchor']) for i in samples])
+    # Reorder the graph to make it align with src/tgt
+    graph_coos = graph_coos[sort_order]
+    src_anchors = src_anchors[sort_order]
 
     batch = {
         'id': id,
