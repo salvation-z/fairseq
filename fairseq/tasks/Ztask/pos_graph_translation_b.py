@@ -43,9 +43,10 @@ def pos_loader(
     data_path, split,
     src, src_dict,
     tgt, tgt_dict,
+    anchor, anchor_dict,
     combine, dataset_impl, upsample_primary,
     left_pad_source, left_pad_target, max_source_positions,
-    max_target_positions, prepend_bos=False, load_alignments=False,
+    max_target_positions, prepend_bos=False,
     truncate_source=False, append_source_id=False
     ):
 
@@ -57,6 +58,7 @@ def pos_loader(
 
     src_datasets = []
     tgt_datasets = []
+    anchor_datasets = []
 
     for k in itertools.count():
         split_k = split + (str(k) if k > 0 else '')
@@ -92,6 +94,14 @@ def pos_loader(
         if tgt_dataset is not None:
             tgt_datasets.append(tgt_dataset)
 
+        anchor_prefix = os.path.join(
+                data_path, anchor, '{}.{}-{}.'.format(split_k, anchor, tgt))
+
+        anchor_dataset = data_utils.load_indexed_dataset(
+            anchor_prefix + anchor, anchor_dict, dataset_impl)
+        if anchor_dataset is not None:
+            anchor_datasets.append(anchor_dataset)
+
         logger.info('{} {} {}-{} {} examples'.format(
             data_path, split_k, src, tgt, len(src_datasets[-1])
         ))
@@ -100,10 +110,13 @@ def pos_loader(
             break
 
     assert len(src_datasets) == len(tgt_datasets) or len(tgt_datasets) == 0
+    # None is not avaliable for anchors
+    assert len(src_datasets) == len(anchor_datasets)
 
     if len(src_datasets) == 1:
         src_dataset = src_datasets[0]
         tgt_dataset = tgt_datasets[0] if len(tgt_datasets) > 0 else None
+        anchor_dataset = anchor_datasets[0]
     else:
         sample_ratios = [1] * len(src_datasets)
         sample_ratios[0] = upsample_primary
@@ -112,6 +125,7 @@ def pos_loader(
             tgt_dataset = ConcatDataset(tgt_datasets, sample_ratios)
         else:
             tgt_dataset = None
+        anchor_dataset = ConcatDataset(anchor_datasets, sample_ratios)
 
     if prepend_bos:
         assert hasattr(src_dict, "bos_index") and hasattr(
@@ -129,77 +143,17 @@ def pos_loader(
                 tgt_dataset, tgt_dict.index('[{}]'.format(tgt)))
         eos = tgt_dict.index('[{}]'.format(tgt))
 
-    align_dataset = None
-    if load_alignments:
-        align_path = os.path.join(
-            data_path, '{}.align.{}-{}'.format(split, src, tgt))
-        if indexed_dataset.dataset_exists(align_path, impl=dataset_impl):
-            align_dataset = data_utils.load_indexed_dataset(
-                align_path, None, dataset_impl)
-
     tgt_dataset_sizes = tgt_dataset.sizes if tgt_dataset is not None else None
 
-    # Load POS Graph
-    def graph_exist(data_path, split, src, tgt, lang):
-        existence = True
-        row_path = os.path.join(data_path, '{}.{}-{}.{}'.format(split, src, tgt, src)) + '.row'
-        col_path = os.path.join(data_path, '{}.{}-{}.{}'.format(split, src, tgt, src)) + '.col'
-        anchor_path = os.path.join(data_path, '{}.{}-{}.{}'.format(split, src, tgt, src)) + '.anchor'
-        
-        if(not os.path.exists(row_path)):
-            existence = False
-        elif(not os.path.exists(col_path)):
-            existence = False
-        elif(not os.path.exists(anchor_path)):
-            existence = False
-
-        return existence
-
-    pos_graphs_l = []
-    pos_anchors_l = []
-    for k in itertools.count():
-        split_k = split + (str(k) if k > 0 else '')
-
-        existence = graph_exist(data_path, split_k, src, tgt, src)
-        if(not existence):
-            if(k == 0):
-                raise FileNotFoundError('POS Graph Dataset not found')
-            if(k > 0):
-                break
-
-        pos_rows = codecs.open(os.path.join(
-            data_path, '{}.{}-{}.{}'.format(split_k, src, tgt, src)) + '.row', 'r', 'utf-8').readlines()
-        pos_cols = codecs.open(os.path.join(
-            data_path, '{}.{}-{}.{}'.format(split_k, src, tgt, src)) + '.col', 'r', 'utf-8').readlines()
-        pos_graphs = []
-        print('Loading graphs' + '.' * 50)
-        assert len(pos_cols) == len(pos_rows)
-        pbar = tqdm(total=len(pos_cols))
-        for n, (row, col) in enumerate(zip(pos_rows, pos_cols)):
-            pos_row = [eval(i) for i in row.strip().split()]
-            pos_col = [eval(i) for i in col.strip().split()]
-            pos_graphs.append((pos_row, pos_col))
-            pbar.update()
-        pbar.close()
-        pos_anchors = codecs.open(os.path.join(
-            data_path, '{}.{}-{}.{}'.format(split_k, src, tgt, src)) + '.anchor', 'r', 'utf-8').readlines()
-        anchors = []
-        for line in pos_anchors:
-            anchors.append([eval(i) for i in line.strip().split()])
-
-        pos_graphs_l.extend(pos_graphs)
-        pos_anchors_l.extend(anchors)
-
-    assert (len(pos_anchors_l) == len(pos_graphs_l)) and (len(src_dataset.sizes) == len(pos_anchors_l))
-
     return POSGraphLanguagePairDataset(
-        src_dataset, src_dataset.sizes, src_dict, pos_anchors_l, pos_graphs_l,
+        src_dataset, src_dataset.sizes, src_dict, 
+        anchor_dataset, anchor_dataset.sizes, anchor_dict,
         tgt_dataset, tgt_dataset_sizes, tgt_dict,
         left_pad_source=left_pad_source,
         left_pad_target=left_pad_target,
         max_source_positions=max_source_positions,
         max_target_positions=max_target_positions,
-        align_dataset=align_dataset, eos=eos
+        eos=eos
     )
 
 
@@ -329,7 +283,7 @@ class POSTranslationTaskb(FairseqTask):
         # infer langcode
         src, tgt = self.args.source_lang, self.args.target_lang
 
-        # get anchor
+        # get anchor without arguments
         anchor = 'anchor'
 
         self.datasets[split] = pos_loader(
@@ -342,7 +296,6 @@ class POSTranslationTaskb(FairseqTask):
             left_pad_target=self.args.left_pad_target,
             max_source_positions=self.args.max_source_positions,
             max_target_positions=self.args.max_target_positions,
-            load_alignments=self.args.load_alignments,
             truncate_source=self.args.truncate_source,
         )
 
