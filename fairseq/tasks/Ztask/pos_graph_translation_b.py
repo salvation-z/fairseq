@@ -5,8 +5,6 @@
 
 # New data load policy
 # Not Done yet
-# TODO:
-# Make the new data loader avaliable
 
 from argparse import Namespace
 import json
@@ -29,8 +27,9 @@ from fairseq.data import (
     PrependTokenDataset,
     StripTokenDataset,
     TruncateDataset,
-    POSGraphLanguagePairDataset,
-)
+    )
+# Load new datasets
+from fairseq.data.Zdata import POSGraphLanguagePairDatasetb
 
 from fairseq.tasks import FairseqTask, register_task
 
@@ -145,7 +144,7 @@ def pos_loader(
 
     tgt_dataset_sizes = tgt_dataset.sizes if tgt_dataset is not None else None
 
-    return POSGraphLanguagePairDataset(
+    return POSGraphLanguagePairDatasetb(
         src_dataset, src_dataset.sizes, src_dict, 
         anchor_dataset, anchor_dataset.sizes, anchor_dict,
         tgt_dataset, tgt_dataset_sizes, tgt_dict,
@@ -300,7 +299,8 @@ class POSTranslationTaskb(FairseqTask):
         )
 
     def build_dataset_for_inference(self, src_tokens, src_lengths, src_anchors, pos_graphs):
-        return POSGraphLanguagePairDataset(src_tokens, src_lengths, self.source_dictionary, 
+        # TODO
+        return POSGraphLanguagePairDatasetb(src_tokens, src_lengths, self.source_dictionary, 
                                            src_anchors, pos_graphs)
 
     def build_model(self, args):

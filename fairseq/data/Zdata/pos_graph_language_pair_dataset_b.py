@@ -28,28 +28,6 @@ def collate_with_graph(
             pad_idx, eos_idx, left_pad, move_eos_to_beginning,
         )
 
-    def check_alignment(alignment, src_len, tgt_len):
-        if alignment is None or len(alignment) == 0:
-            return False
-        if alignment[:, 0].max().item() >= src_len - 1 or alignment[:, 1].max().item() >= tgt_len - 1:
-            logger.warning("alignment size mismatch found, skipping alignment!")
-            return False
-        return True
-
-    def compute_alignment_weights(alignments):
-        """
-        Given a tensor of shape [:, 2] containing the source-target indices
-        corresponding to the alignments, a weight vector containing the
-        inverse frequency of each target index is computed.
-        For e.g. if alignments = [[5, 7], [2, 3], [1, 3], [4, 2]], then
-        a tensor containing [1., 0.5, 0.5, 1] should be returned (since target
-        index 3 is repeated twice)
-        """
-        align_tgt = alignments[:, 1]
-        _, align_tgt_i, align_tgt_c = torch.unique(align_tgt, return_inverse=True, return_counts=True)
-        align_weights = align_tgt_c[align_tgt_i[np.arange(len(align_tgt))]]
-        return 1. / align_weights.float()
-
     id = torch.LongTensor([s['id'] for s in samples])
     src_tokens = merge('source', left_pad=left_pad_source)
     # sort by descending source length
@@ -63,7 +41,6 @@ def collate_with_graph(
     if samples[0].get('target', None) is not None:
         target = merge('target', left_pad=left_pad_target)
         target = target.index_select(0, sort_order)
-        tgt_lengths = torch.LongTensor([s['target'].numel() for s in samples]).index_select(0, sort_order)
         ntokens = sum(len(s['target']) for s in samples)
 
         if input_feeding:
@@ -79,15 +56,8 @@ def collate_with_graph(
         ntokens = sum(len(s['source']) for s in samples)
 
     # Getting Graph data
-    # Data is not formed into PyG dataset because nodes data is not computed yet
-    graph_coos = np.array([i['graph'] for i in samples])
-    src_anchors = np.array([i['anchor'] for i in samples])
-    # Reorder the graph to make it align with src/tgt
-    graph_coos = graph_coos[sort_order].tolist()
-    src_anchors = src_anchors[sort_order].tolist()
-    # Generate tensor
-    graph_coos = [torch.tensor(i) for i in graph_coos]
-    src_anchors = [torch.tensor(i) for i in src_anchors]
+    anchor = merge('anchor', left_pad=left_pad_target)
+    anchor = target.index_select(0, sort_order)
 
 
     batch = {
@@ -97,38 +67,12 @@ def collate_with_graph(
         'net_input': {
             'src_tokens': src_tokens,
             'src_lengths': src_lengths,
-            'src_anchors': src_anchors,
-            'graphs': graph_coos,
+            'src_anchors': anchor,
         },
         'target': target,
     }
     if prev_output_tokens is not None:
         batch['net_input']['prev_output_tokens'] = prev_output_tokens
-
-    if samples[0].get('alignment', None) is not None:
-        bsz, tgt_sz = batch['target'].shape
-        src_sz = batch['net_input']['src_tokens'].shape[1]
-
-        offsets = torch.zeros((len(sort_order), 2), dtype=torch.long)
-        offsets[:, 1] += (torch.arange(len(sort_order), dtype=torch.long) * tgt_sz)
-        if left_pad_source:
-            offsets[:, 0] += (src_sz - src_lengths)
-        if left_pad_target:
-            offsets[:, 1] += (tgt_sz - tgt_lengths)
-
-        alignments = [
-            alignment + offset
-            for align_idx, offset, src_len, tgt_len in zip(sort_order, offsets, src_lengths, tgt_lengths)
-            for alignment in [samples[align_idx]['alignment'].view(-1, 2)]
-            if check_alignment(alignment, src_len, tgt_len)
-        ]
-
-        if len(alignments) > 0:
-            alignments = torch.cat(alignments, dim=0)
-            align_weights = compute_alignment_weights(alignments)
-
-            batch['alignments'] = alignments
-            batch['align_weights'] = align_weights
 
     return batch
 
@@ -170,13 +114,13 @@ class POSGraphLanguagePairDatasetb(FairseqDataset):
     """
 
     def __init__(
-        self, src, src_sizes, src_dict, src_anchors, pos_graph,
+        self, src, src_sizes, src_dict,
+        anchor, anchor_sizes, anchor_dict,
         tgt=None, tgt_sizes=None, tgt_dict=None,
         left_pad_source=True, left_pad_target=False,
         max_source_positions=1024, max_target_positions=1024,
         shuffle=True, input_feeding=True,
         remove_eos_from_source=False, append_eos_to_target=False,
-        align_dataset=None,
         append_bos=False, eos=None
     ):
         if tgt_dict is not None:
@@ -184,13 +128,14 @@ class POSGraphLanguagePairDatasetb(FairseqDataset):
             assert src_dict.eos() == tgt_dict.eos()
             assert src_dict.unk() == tgt_dict.unk()
         self.src = src
-        self.pos_graph = pos_graph
-        self.src_anchors = src_anchors
+        self.anchor = anchor
         self.tgt = tgt
         self.src_sizes = np.array(src_sizes)
         self.tgt_sizes = np.array(tgt_sizes) if tgt_sizes is not None else None
+        self.anchor_sizes = anchor_sizes
         self.src_dict = src_dict
         self.tgt_dict = tgt_dict
+        self.anchor_dict = anchor_dict
         self.left_pad_source = left_pad_source
         self.left_pad_target = left_pad_target
         self.max_source_positions = max_source_positions
@@ -199,17 +144,13 @@ class POSGraphLanguagePairDatasetb(FairseqDataset):
         self.input_feeding = input_feeding
         self.remove_eos_from_source = remove_eos_from_source
         self.append_eos_to_target = append_eos_to_target
-        self.align_dataset = align_dataset
-        if self.align_dataset is not None:
-            assert self.tgt_sizes is not None, "Both source and target needed when alignments are provided"
         self.append_bos = append_bos
         self.eos = (eos if eos is not None else src_dict.eos())
 
     def __getitem__(self, index):
         tgt_item = self.tgt[index] if self.tgt is not None else None
         src_item = self.src[index]
-        graph_item = self.pos_graph[index]
-        anchor_item = self.src_anchors[index]
+        anchor_item = self.anchor[index]
         # Append EOS to end of tgt sentence if it does not have an EOS and remove
         # EOS from end of src sentence if it exists. This is useful when we use
         # use existing datasets for opposite directions i.e., when we want to
@@ -237,11 +178,8 @@ class POSGraphLanguagePairDatasetb(FairseqDataset):
             'id': index,
             'source': src_item,
             'target': tgt_item,
-            'graph': graph_item,
             'anchor': anchor_item,
         }
-        if self.align_dataset is not None:
-            example['alignment'] = self.align_dataset[index]
         return example
 
     def __len__(self):
