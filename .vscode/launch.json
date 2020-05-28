@@ -61,6 +61,7 @@
                 "--validpref", "newstest2016.tok.bpe.32000",
                 "--testpref", "newstest2015.tok.bpe.32000,newstest2014.tok.bpe.32000,newstest2013.tok.bpe.32000,newstest2012.tok.bpe.32000,newstest2011.tok.bpe.32000,newstest2010.tok.bpe.32000,newstest2009.tok.bpe.32000", 
                 "--source-lang", "anchor",
+                "--target-lang", "de",
                 "--destdir", "../new-bin/temp", 
                 "--joined-dictionary",
                 "--workers", "16",
