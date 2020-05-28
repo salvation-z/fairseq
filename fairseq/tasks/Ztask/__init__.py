@@ -1,5 +1,7 @@
-from .pos_graph_translate import POSTranslation
+from .pos_graph_translation_b import POSTranslationTaskb
+from .pos_graph_translation import POSTranslationTask
 
 __all__ = [
-    'POSTranslation'
+    'POSTranslationTask',
+    'POSTranslationTaskb'
 ]

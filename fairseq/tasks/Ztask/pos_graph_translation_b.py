@@ -39,22 +39,24 @@ EVAL_BLEU_ORDER = 4
 
 logger = logging.getLogger(__name__)
 
-
-def load_data_base(
+def pos_loader(
     data_path, split,
-    src, dictionary, tgt,
+    src, src_dict,
+    tgt, tgt_dict,
     combine, dataset_impl, upsample_primary,
-    max_source_positions, suffix, 
-    prepend_bos=False,
-    truncate=False, append_source_id=False
-):
+    left_pad_source, left_pad_target, max_source_positions,
+    max_target_positions, prepend_bos=False, load_alignments=False,
+    truncate_source=False, append_source_id=False
+    ):
 
+    # Check the existence of the file
     def split_exists(split, src, tgt, lang, data_path):
         filename = os.path.join(
             data_path, '{}.{}-{}.{}'.format(split, src, tgt, lang))
         return indexed_dataset.dataset_exists(filename, impl=dataset_impl)
 
-    datasets = []
+    src_datasets = []
+    tgt_datasets = []
 
     for k in itertools.count():
         split_k = split + (str(k) if k > 0 else '')
@@ -74,78 +76,121 @@ def load_data_base(
                     'Dataset not found: {} ({})'.format(split, data_path))
 
         src_dataset = data_utils.load_indexed_dataset(
-            prefix + suffix, dictionary, dataset_impl)
-        if truncate:
+            prefix + src, src_dict, dataset_impl)
+        if truncate_source:
             src_dataset = AppendTokenDataset(
                 TruncateDataset(
-                    StripTokenDataset(src_dataset, dictionary.eos()),
+                    StripTokenDataset(src_dataset, src_dict.eos()),
                     max_source_positions - 1,
                 ),
-                dictionary.eos(),
+                src_dict.eos(),
             )
-        datasets.append(src_dataset)
+        src_datasets.append(src_dataset)
+
+        tgt_dataset = data_utils.load_indexed_dataset(
+            prefix + tgt, tgt_dict, dataset_impl)
+        if tgt_dataset is not None:
+            tgt_datasets.append(tgt_dataset)
 
         logger.info('{} {} {}-{} {} examples'.format(
-            data_path, split_k, src, tgt, len(datasets[-1])
+            data_path, split_k, src, tgt, len(src_datasets[-1])
         ))
 
         if not combine:
             break
 
-    if len(datasets) == 1:
-        datasets = datasets[0]
+    assert len(src_datasets) == len(tgt_datasets) or len(tgt_datasets) == 0
+
+    if len(src_datasets) == 1:
+        src_dataset = src_datasets[0]
+        tgt_dataset = tgt_datasets[0] if len(tgt_datasets) > 0 else None
     else:
-        sample_ratios = [1] * len(datasets)
+        sample_ratios = [1] * len(src_datasets)
         sample_ratios[0] = upsample_primary
-        datasets = ConcatDataset(datasets, sample_ratios)
+        src_dataset = ConcatDataset(src_datasets, sample_ratios)
+        if len(tgt_datasets) > 0:
+            tgt_dataset = ConcatDataset(tgt_datasets, sample_ratios)
+        else:
+            tgt_dataset = None
 
     if prepend_bos:
-        assert hasattr(dictionary, "bos_index")
-        datasets = PrependTokenDataset(datasets, dictionary.bos())
+        assert hasattr(src_dict, "bos_index") and hasattr(
+            tgt_dict, "bos_index")
+        src_dataset = PrependTokenDataset(src_dataset, src_dict.bos())
+        if tgt_dataset is not None:
+            tgt_dataset = PrependTokenDataset(tgt_dataset, tgt_dict.bos())
 
     eos = None
     if append_source_id:
-        datasets = AppendTokenDataset(
-            datasets, dictionary.index('[{}]'.format(src)))
-        eos = dictionary.index('[{}]'.format(src))
+        src_dataset = AppendTokenDataset(
+            src_dataset, src_dict.index('[{}]'.format(src)))
+        if tgt_dataset is not None:
+            tgt_dataset = AppendTokenDataset(
+                tgt_dataset, tgt_dict.index('[{}]'.format(tgt)))
+        eos = tgt_dict.index('[{}]'.format(tgt))
 
-    return datasets
+    align_dataset = None
+    if load_alignments:
+        align_path = os.path.join(
+            data_path, '{}.align.{}-{}'.format(split, src, tgt))
+        if indexed_dataset.dataset_exists(align_path, impl=dataset_impl):
+            align_dataset = data_utils.load_indexed_dataset(
+                align_path, None, dataset_impl)
 
-def pos_dataset_loader(
-    data_path, split,
-    src, src_dict,
-    tgt, tgt_dict, row_dict, 
-    combine, dataset_impl, upsample_primary,
-    left_pad_source, left_pad_target, max_source_positions,
-    max_target_positions, prepend_bos=False, load_alignments=False,
-    truncate_source=False, append_source_id=False
-):
+    tgt_dataset_sizes = tgt_dataset.sizes if tgt_dataset is not None else None
 
-    src_dataset = load_data_base(data_path, split,
-                                src, src_dict, tgt,
-                                combine, dataset_impl, upsample_primary,
-                                max_source_positions, src,
-                                prepend_bos, truncate_source, append_source_id)
-    tgt_dataset = load_data_base(data_path, split,
-                                src, tgt_dict, tgt,
-                                combine, dataset_impl, upsample_primary,
-                                max_source_positions, tgt,
-                                prepend_bos=prepend_bos, append_source_id=append_source_id)
-    row_dataset = load_data_base(data_path, split,
-                                src, row_dict, tgt,
-                                combine, dataset_impl, upsample_primary,
-                                max_source_positions, 'row',
-                                prepend_bos, append_source_id=append_source_id)
-    row_dataset = load_data_base(data_path, split,
-                                src, row_dict, tgt,
-                                combine, dataset_impl, upsample_primary,
-                                max_source_positions, 'col',
-                                prepend_bos, append_source_id=append_source_id)
-    anchor_dataset = load_data_base(data_path, split,
-                                    src, row_dict, tgt,
-                                    combine, dataset_impl, upsample_primary,
-                                    max_source_positions, 'anchor',
-                                    prepend_bos, append_source_id=append_source_id)
+    # Load POS Graph
+    def graph_exist(data_path, split, src, tgt, lang):
+        existence = True
+        row_path = os.path.join(data_path, '{}.{}-{}.{}'.format(split, src, tgt, src)) + '.row'
+        col_path = os.path.join(data_path, '{}.{}-{}.{}'.format(split, src, tgt, src)) + '.col'
+        anchor_path = os.path.join(data_path, '{}.{}-{}.{}'.format(split, src, tgt, src)) + '.anchor'
+        
+        if(not os.path.exists(row_path)):
+            existence = False
+        elif(not os.path.exists(col_path)):
+            existence = False
+        elif(not os.path.exists(anchor_path)):
+            existence = False
+
+        return existence
+
+    pos_graphs_l = []
+    pos_anchors_l = []
+    for k in itertools.count():
+        split_k = split + (str(k) if k > 0 else '')
+
+        existence = graph_exist(data_path, split_k, src, tgt, src)
+        if(not existence):
+            if(k == 0):
+                raise FileNotFoundError('POS Graph Dataset not found')
+            if(k > 0):
+                break
+
+        pos_rows = codecs.open(os.path.join(
+            data_path, '{}.{}-{}.{}'.format(split_k, src, tgt, src)) + '.row', 'r', 'utf-8').readlines()
+        pos_cols = codecs.open(os.path.join(
+            data_path, '{}.{}-{}.{}'.format(split_k, src, tgt, src)) + '.col', 'r', 'utf-8').readlines()
+        pos_graphs = []
+        print('Loading graphs' + '.' * 50)
+        assert len(pos_cols) == len(pos_rows)
+        pbar = tqdm(total=len(pos_cols))
+        for n, (row, col) in enumerate(zip(pos_rows, pos_cols)):
+            pos_row = [eval(i) for i in row.strip().split()]
+            pos_col = [eval(i) for i in col.strip().split()]
+            pos_graphs.append((pos_row, pos_col))
+            pbar.update()
+        pbar.close()
+        pos_anchors = codecs.open(os.path.join(
+            data_path, '{}.{}-{}.{}'.format(split_k, src, tgt, src)) + '.anchor', 'r', 'utf-8').readlines()
+        anchors = []
+        for line in pos_anchors:
+            anchors.append([eval(i) for i in line.strip().split()])
+
+        pos_graphs_l.extend(pos_graphs)
+        pos_anchors_l.extend(anchors)
+
+    assert (len(pos_anchors_l) == len(pos_graphs_l)) and (len(src_dataset.sizes) == len(pos_anchors_l))
 
     return POSGraphLanguagePairDataset(
         src_dataset, src_dataset.sizes, src_dict, pos_anchors_l, pos_graphs_l,
@@ -157,9 +202,9 @@ def pos_dataset_loader(
         align_dataset=align_dataset, eos=eos
     )
 
-        
-@register_task('pos_translation_new')
-class POSTranslation(FairseqTask):
+
+@register_task('pos_translation_b')
+class POSTranslationTaskb(FairseqTask):
     """
     Translate from one (source) language to another (target) language.
 
@@ -267,9 +312,9 @@ class POSTranslation(FairseqTask):
             args.target_lang, len(tgt_dict)))
 
         # load row dictionaries
-        row_dict = cls.load_dictionary(os.path.join(
-            paths[0], 'dict.row.txt'))
-        return cls(args, src_dict, tgt_dict, row_dict)
+        anchor_dict = cls.load_dictionary(os.path.join(
+            paths[0], 'dict.anchor.txt'))
+        return cls(args, src_dict, tgt_dict, anchor_dict)
 
     def load_dataset(self, split, epoch=1, combine=False, **kwargs):
         """Load a given dataset split.
@@ -284,8 +329,13 @@ class POSTranslation(FairseqTask):
         # infer langcode
         src, tgt = self.args.source_lang, self.args.target_lang
 
-        self.datasets[split] = pos_dataset_loader(
-            data_path, split, src, self.src_dict, tgt, self.tgt_dict, self.row_dict,
+        # get anchor
+        anchor = 'anchor'
+
+        self.datasets[split] = pos_loader(
+            data_path, split, src, self.src_dict,
+            tgt, self.tgt_dict,
+            anchor, self.anchor_dict,
             combine=combine, dataset_impl=self.args.dataset_impl,
             upsample_primary=self.args.upsample_primary,
             left_pad_source=self.args.left_pad_source,
