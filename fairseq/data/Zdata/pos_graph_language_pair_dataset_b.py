@@ -133,7 +133,7 @@ def collate_with_graph(
     return batch
 
 
-class POSGraphLanguagePairDataset(FairseqDataset):
+class POSGraphLanguagePairDatasetb(FairseqDataset):
     """
     A pair of torch.utils.data.Datasets with pos annotated for source side.
 
