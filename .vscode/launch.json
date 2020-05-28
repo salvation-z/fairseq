@@ -31,19 +31,41 @@
             "type": "python",
             "request": "launch",
             "env": {
-                "DataPath": "/home5/zhangzhuocheng/lab/pos_graph"
+                "DataPath": "/home5/zhangzhuocheng/lab/pos_graph/datasets/new-raw"
             },
             "program": "/home5/zhangzhuocheng/lab/pos_graph/fairseq/preprocess.py",
             "console": "integratedTerminal",
             "args": [
-                "--trainpref", "datasets/train.tok.clean.bpe.32000",
-                "--validpref", "datasets/newstest2016.tok.bpe.32000",
-                "--testpref", "datasets/newstest2015.tok.bpe.32000,datasets/newstest2014.tok.bpe.32000,datasets/newstest2013.tok.bpe.32000,datasets/newstest2012.tok.bpe.32000,datasets/newstest2011.tok.bpe.32000,datasets/newstest2010.tok.bpe.32000,datasets/newstest2009.tok.bpe.32000", 
+                "--trainpref", "train.tok.clean.bpe.32000",
+                "--validpref", "newstest2016.tok.bpe.32000",
+                "--testpref", "newstest2015.tok.bpe.32000,newstest2014.tok.bpe.32000,newstest2013.tok.bpe.32000,newstest2012.tok.bpe.32000,newstest2011.tok.bpe.32000,newstest2010.tok.bpe.32000,newstest2009.tok.bpe.32000", 
                 "--source-lang", "en", 
                 "--target-lang", "de",
-                "--destdir", "data-bin", 
+                "--destdir", "../new-bin", 
                 "--joined-dictionary",
                 "--workers", "16"
+            ]   
+        },
+
+        {
+            "name": "Python: preprocess anchor",
+            "type": "python",
+            "request": "launch",
+            "env": {
+                "DataPath": "/home5/zhangzhuocheng/lab/pos_graph/datasets/new-raw"
+            },
+            "program": "/home5/zhangzhuocheng/lab/pos_graph/fairseq/preprocess.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--trainpref", "train.tok.clean.bpe.32000",
+                "--validpref", "newstest2016.tok.bpe.32000",
+                "--testpref", "newstest2015.tok.bpe.32000,newstest2014.tok.bpe.32000,newstest2013.tok.bpe.32000,newstest2012.tok.bpe.32000,newstest2011.tok.bpe.32000,newstest2010.tok.bpe.32000,newstest2009.tok.bpe.32000", 
+                "--source-lang", "anchor",
+                "--destdir", "../new-bin/temp", 
+                "--joined-dictionary",
+                "--workers", "16",
+                "--only-source",
+                "--srcdict", "dict.anchor.txt"
             ]   
         },
 
@@ -72,27 +94,6 @@
             ]   
         },
 
-        {
-            "name": "Python: preprocess tiny v2",
-            "type": "python",
-            "request": "launch",
-            "env": {
-                "DataPath": "/home5/zhangzhuocheng/lab/pos_graph"
-            },
-            "program": "/home5/zhangzhuocheng/lab/pos_graph/fairseq/preprocess.py",
-            "console": "integratedTerminal",
-            "args": [
-                "--trainpref", "datasets/tiny_raw/train.tok.clean.bpe.32000",
-                "--validpref", "datasets/tiny_raw/newstest2016.tok.bpe.32000",
-                "--testpref", "datasets/tiny_raw/newstest2015.tok.bpe.32000,datasets/tiny_raw/newstest2014.tok.bpe.32000,datasets/tiny_raw/newstest2013.tok.bpe.32000,datasets/tiny_raw/newstest2012.tok.bpe.32000,datasets/tiny_raw/newstest2011.tok.bpe.32000,datasets/tiny_raw/newstest2010.tok.bpe.32000,datasets/tiny_raw/newstest2009.tok.bpe.32000", 
-                "--align-suffix", "anchor",
-                "--source-lang", "en", 
-                "--target-lang", "de",
-                "--destdir", "datasets/tiny-bin-v2", 
-                "--joined-dictionary",
-                "--workers", "16"
-            ]   
-        },
 
         // Launch setting for training
         // Change this before running
