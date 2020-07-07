@@ -11,6 +11,7 @@
 
 import math
 from typing import Dict, Optional, Tuple
+from math import ceil
 
 import torch
 import torch.nn.functional as F
@@ -25,31 +26,36 @@ from torch_geometric import GAT, GCN
 class PhraseGenerator(nn.Module):
     """
     Phrase level representation generator
+    1. Parsing the seqence for different function
     """
+
     def __init__(
         self,
-        embed_dim,
-        add_bias,
-        generate_function,
-        center_first=None,
+        phrase_info,
     ):
-        """init function
+        """
+        init function
 
         Args:
             embed_dim ([int]): [the input dimension (is the same as output dimension)]
             generate_function ([str]): using different phrase generate functions
-            generate_function ([str]): using different phrase generate functions
+            center_first ([bool, default None]): whether let the 1st token be the center of the phrase
         """
         super().__init__()
+        generate_function = phrase_info['generate_function']
+        center_first = phrase_info['center_first']
+        self.__parse_func__ = PhraseBuilder(phrase_info)
         # Basic function
         if(generate_function == 'max-pooling'):
             self.__type__ = generate_function
-            self.__fun__ = lambda tokens:torch.max(tokens, 1)[0]
+            self.__repr_func__ = lambda tokens: torch.max(tokens, 1)[0]
         elif(generate_function == 'averate-pooling'):
             self.__type__ = generate_function
-            self.__fun__ = lambda tokens:torch.mean(tokens, 1)[0]
+            self.__repr_func__ = lambda tokens: torch.mean(tokens, 1)[0]
 
         # Graph based function
+        # Not implemented
+        # Undone
         elif(generate_function == 'GAT'):
             assert type(center_first) == bool
             self.__type__ = generate_function
@@ -62,27 +68,88 @@ class PhraseGenerator(nn.Module):
             pass
 
         # Conv based function
+        # Undone
         elif(generate_function == 'CNN'):
             raise NotImplementedError
             pass
         else:
             # Return first token as outputs
-            self.__fun__ = lambda tokens:tokens[0]
+            self.__repr_func__ = lambda tokens: tokens[0]
 
         return
 
     def forward(
         self,
-        tokens
+        x,
+        phrase_info,
     ):
-        output = self.__fun__(tokens)
+        """
+        forward method
+
+        Args:
+            x ([Tensor]): [(seq_len, bsz, embed_dim) the tensor in attention layer]
+            phrase_info ([dict]): [used for parsing]
+
+        Returns:
+            [Tensor]: [(seq_length, bsz, embed_dim)]
+        """
+        phrase_info, parsed = self.__parse_func__(x, phrase_info)
+        output = self.__repr_func__(parsed)
         return output
 
+
+# Undone
+# 1. fixed_window √
+# 2. graph based ×
+class PhraseBuilder:
+    def __init__(self, phrase_info):
+        """
+        [Parsing the seq into Phrases, each sentence is parsed into multiple phrases]
+
+        Args:
+            phrase_info ([dict]): [used for parsing]
+
+        Returns:
+            [Tensor]: [phrase_len, phrase_num, bsz, embed_dim]
+        """
+        self.parse_function = phrase_info['parse_function']
+        if(self.parse_function == 'fixed_window'):
+            self.window_size = phrase_info['window_size']
+
+    def __call__(self, x, phrase_info):
+        """
+        [Parsing the seq into Phrases, each sentence is parsed into multiple phrases]
+
+        Args:
+            x ([Tensor]): (seq_len, bsz, embed_dim) the tensor in attention layer
+            phrase_info ([dict]): [used for parsing]
+
+        Returns:
+            [Tensor]: [phrase_len, phrase_num, bsz, embed_dim]
+        """
+
+        if(self.parse_function == 'fixed_window'):
+            seq_length = x.size()[0]
+            chunks = ceil(seq_length / self.window_size)
+            pad = (0, chunks * self.window_size - seq_length)
+            # Padding Zero to the Tensor X
+            x = x.transpose(0, -1)
+            x = F.pad(x, pad)
+            x = x.transpose(0, -1)
+            x = x.chunk(chunks, dim=0)
+            result = torch.stack(x, dim=1)
+
+        return result, phrase_info
+
+
+# Undone
 @with_incremental_state
 class MultiPhraseAttention(nn.Module):
     """Multi-headed attention.
 
     See "Attention Is All You Need" for more details.
+
+    Note: By default the torch version MHA is turned on in MultiHeadAttention, but it is canceled in this class
     """
 
     def __init__(
@@ -137,12 +204,6 @@ class MultiPhraseAttention(nn.Module):
 
         self.onnx_trace = False
 
-        self.enable_torch_version = False
-        if hasattr(F, "multi_head_attention_forward"):
-            self.enable_torch_version = True
-        else:
-            self.enable_torch_version = False
-
     def prepare_for_onnx_export_(self):
         self.onnx_trace = True
 
@@ -169,8 +230,7 @@ class MultiPhraseAttention(nn.Module):
     def forward(
         self,
         query,
-        key: Optional[Tensor],
-        value: Optional[Tensor],
+        key_and_value: Optional[Tensor],
         key_padding_mask: Optional[Tensor] = None,
         incremental_state: Optional[Dict[str, Dict[str, Optional[Tensor]]]] = None,
         need_weights: bool = True,
@@ -178,6 +238,7 @@ class MultiPhraseAttention(nn.Module):
         attn_mask: Optional[Tensor] = None,
         before_softmax: bool = False,
         need_head_weights: bool = False,
+        phrase_info: dict = None,
     ) -> Tuple[Tensor, Optional[Tensor]]:
         """Input shape: Time x Batch x Channel
 
@@ -195,44 +256,16 @@ class MultiPhraseAttention(nn.Module):
             need_head_weights (bool, optional): return the attention
                 weights for each head. Implies *need_weights*. Default:
                 return the average attention weights over all heads.
+            phrase_info (dict, optional): used for phrase parsing
         """
         if need_head_weights:
             need_weights = True
 
+        key = value = key_and_value
+
         tgt_len, bsz, embed_dim = query.size()
         assert embed_dim == self.embed_dim
         assert list(query.size()) == [tgt_len, bsz, embed_dim]
-
-        if (
-            self.enable_torch_version
-            and not self.onnx_trace
-            and incremental_state is None
-            and not static_kv
-        ):
-            assert key is not None and value is not None
-            return F.multi_head_attention_forward(
-                query,
-                key,
-                value,
-                self.embed_dim,
-                self.num_heads,
-                torch.empty([0]),
-                torch.cat((self.q_proj.bias, self.k_proj.bias, self.v_proj.bias)),
-                self.bias_k,
-                self.bias_v,
-                self.add_zero_attn,
-                self.dropout,
-                self.out_proj.weight,
-                self.out_proj.bias,
-                self.training,
-                key_padding_mask,
-                need_weights,
-                attn_mask,
-                use_separate_proj_weight=True,
-                q_proj_weight=self.q_proj.weight,
-                k_proj_weight=self.k_proj.weight,
-                v_proj_weight=self.v_proj.weight,
-            )
 
         if incremental_state is not None:
             saved_state = self._get_input_buffer(incremental_state)
@@ -278,7 +311,8 @@ class MultiPhraseAttention(nn.Module):
                 key_padding_mask = torch.cat(
                     [
                         key_padding_mask,
-                        key_padding_mask.new_zeros(key_padding_mask.size(0), 1),
+                        key_padding_mask.new_zeros(
+                            key_padding_mask.size(0), 1),
                     ],
                     dim=1,
                 )
@@ -306,7 +340,8 @@ class MultiPhraseAttention(nn.Module):
             if "prev_key" in saved_state:
                 _prev_key = saved_state["prev_key"]
                 assert _prev_key is not None
-                prev_key = _prev_key.view(bsz * self.num_heads, -1, self.head_dim)
+                prev_key = _prev_key.view(
+                    bsz * self.num_heads, -1, self.head_dim)
                 if static_kv:
                     k = prev_key
                 else:
@@ -315,7 +350,8 @@ class MultiPhraseAttention(nn.Module):
             if "prev_value" in saved_state:
                 _prev_value = saved_state["prev_value"]
                 assert _prev_value is not None
-                prev_value = _prev_value.view(bsz * self.num_heads, -1, self.head_dim)
+                prev_value = _prev_value.view(
+                    bsz * self.num_heads, -1, self.head_dim)
                 if static_kv:
                     v = prev_value
                 else:
@@ -333,12 +369,15 @@ class MultiPhraseAttention(nn.Module):
                 static_kv=static_kv,
             )
 
-            saved_state["prev_key"] = k.view(bsz, self.num_heads, -1, self.head_dim)
-            saved_state["prev_value"] = v.view(bsz, self.num_heads, -1, self.head_dim)
+            saved_state["prev_key"] = k.view(
+                bsz, self.num_heads, -1, self.head_dim)
+            saved_state["prev_value"] = v.view(
+                bsz, self.num_heads, -1, self.head_dim)
             saved_state["prev_key_padding_mask"] = key_padding_mask
             # In this branch incremental_state is never None
             assert incremental_state is not None
-            incremental_state = self._set_input_buffer(incremental_state, saved_state)
+            incremental_state = self._set_input_buffer(
+                incremental_state, saved_state)
         assert k is not None
         src_len = k.size(1)
 
@@ -354,8 +393,10 @@ class MultiPhraseAttention(nn.Module):
         if self.add_zero_attn:
             assert v is not None
             src_len += 1
-            k = torch.cat([k, k.new_zeros((k.size(0), 1) + k.size()[2:])], dim=1)
-            v = torch.cat([v, v.new_zeros((v.size(0), 1) + v.size()[2:])], dim=1)
+            k = torch.cat(
+                [k, k.new_zeros((k.size(0), 1) + k.size()[2:])], dim=1)
+            v = torch.cat(
+                [v, v.new_zeros((v.size(0), 1) + v.size()[2:])], dim=1)
             if attn_mask is not None:
                 attn_mask = torch.cat(
                     [attn_mask, attn_mask.new_zeros(attn_mask.size(0), 1)], dim=1
@@ -372,9 +413,11 @@ class MultiPhraseAttention(nn.Module):
                 )
 
         attn_weights = torch.bmm(q, k.transpose(1, 2))
-        attn_weights = MultiheadAttention.apply_sparse_mask(attn_weights, tgt_len, src_len, bsz)
+        attn_weights = MultiheadAttention.apply_sparse_mask(
+            attn_weights, tgt_len, src_len, bsz)
 
-        assert list(attn_weights.size()) == [bsz * self.num_heads, tgt_len, src_len]
+        assert list(attn_weights.size()) == [
+            bsz * self.num_heads, tgt_len, src_len]
 
         if attn_mask is not None:
             attn_mask = attn_mask.unsqueeze(0)
@@ -384,11 +427,14 @@ class MultiPhraseAttention(nn.Module):
 
         if key_padding_mask is not None:
             # don't attend to padding symbols
-            attn_weights = attn_weights.view(bsz, self.num_heads, tgt_len, src_len)
+            attn_weights = attn_weights.view(
+                bsz, self.num_heads, tgt_len, src_len)
             attn_weights = attn_weights.masked_fill(
-                key_padding_mask.unsqueeze(1).unsqueeze(2).to(torch.bool), float("-inf")
+                key_padding_mask.unsqueeze(1).unsqueeze(
+                    2).to(torch.bool), float("-inf")
             )
-            attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
+            attn_weights = attn_weights.view(
+                bsz * self.num_heads, tgt_len, src_len)
 
         if before_softmax:
             return attn_weights, v
@@ -404,13 +450,15 @@ class MultiPhraseAttention(nn.Module):
         )
         assert v is not None
         attn = torch.bmm(attn_probs, v)
-        assert list(attn.size()) == [bsz * self.num_heads, tgt_len, self.head_dim]
+        assert list(attn.size()) == [
+            bsz * self.num_heads, tgt_len, self.head_dim]
         if self.onnx_trace and attn.size(1) == 1:
             # when ONNX tracing a single decoder step (sequence length == 1)
             # the transpose is a no-op copy before view, thus unnecessary
             attn = attn.contiguous().view(tgt_len, bsz, embed_dim)
         else:
-            attn = attn.transpose(0, 1).contiguous().view(tgt_len, bsz, embed_dim)
+            attn = attn.transpose(0, 1).contiguous().view(
+                tgt_len, bsz, embed_dim)
         attn = self.out_proj(attn)
         attn_weights: Optional[Tensor] = None
         if need_weights:
@@ -474,7 +522,8 @@ class MultiPhraseAttention(nn.Module):
                     if self.encoder_decoder_attention and input_buffer_k.size(0) == new_order.size(0):
                         break
                     input_buffer[k] = input_buffer_k.index_select(0, new_order)
-            incremental_state = self._set_input_buffer(incremental_state, input_buffer)
+            incremental_state = self._set_input_buffer(
+                incremental_state, input_buffer)
         return incremental_state
 
     def _get_input_buffer(
@@ -506,19 +555,23 @@ class MultiPhraseAttention(nn.Module):
                 # in_proj_weight used to be q + k + v with same dimensions
                 dim = int(state_dict[k].shape[0] / 3)
                 items_to_add[prefix + "q_proj.weight"] = state_dict[k][:dim]
-                items_to_add[prefix + "k_proj.weight"] = state_dict[k][dim : 2 * dim]
-                items_to_add[prefix + "v_proj.weight"] = state_dict[k][2 * dim :]
+                items_to_add[prefix +
+                             "k_proj.weight"] = state_dict[k][dim: 2 * dim]
+                items_to_add[prefix +
+                             "v_proj.weight"] = state_dict[k][2 * dim:]
 
                 keys_to_remove.append(k)
 
                 k_bias = prefix + "in_proj_bias"
                 if k_bias in state_dict.keys():
                     dim = int(state_dict[k].shape[0] / 3)
-                    items_to_add[prefix + "q_proj.bias"] = state_dict[k_bias][:dim]
+                    items_to_add[prefix +
+                                 "q_proj.bias"] = state_dict[k_bias][:dim]
                     items_to_add[prefix + "k_proj.bias"] = state_dict[k_bias][
-                        dim : 2 * dim
+                        dim: 2 * dim
                     ]
-                    items_to_add[prefix + "v_proj.bias"] = state_dict[k_bias][2 * dim :]
+                    items_to_add[prefix +
+                                 "v_proj.bias"] = state_dict[k_bias][2 * dim:]
 
                     keys_to_remove.append(prefix + "in_proj_bias")
 

@@ -30,6 +30,9 @@ from .unfold import unfold1d
 from .transformer_layer import TransformerDecoderLayer, TransformerEncoderLayer
 from .vggblock import VGGBlock
 
+# Added by zzc
+from .Z_layer import MultiPhraseAttention
+
 __all__ = [
     'AdaptiveInput',
     'AdaptiveSoftmax',
@@ -62,4 +65,5 @@ __all__ = [
     'TransformerEncoderLayer',
     'VGGBlock',
     'unfold1d',
+    'MultiPhraseAttention',
 ]
