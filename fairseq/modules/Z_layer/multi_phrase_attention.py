@@ -31,7 +31,7 @@ class PhraseGenerator(nn.Module):
 
     def __init__(
         self,
-        phrase_info,
+        phrase_args,
     ):
         """
         init function
@@ -42,9 +42,9 @@ class PhraseGenerator(nn.Module):
             center_first ([bool, default None]): whether let the 1st token be the center of the phrase
         """
         super().__init__()
-        generate_function = phrase_info['generate_function']
-        center_first = phrase_info['center_first']
-        self.__parse_func__ = PhraseBuilder(phrase_info)
+        generate_function = phrase_args['generate_function']
+        center_first = phrase_args['center_first']
+        self.__parse_func__ = PhraseBuilder(phrase_args)
         # Basic function
         if(generate_function == 'max-pooling'):
             self.__type__ = generate_function
@@ -93,7 +93,7 @@ class PhraseGenerator(nn.Module):
         Returns:
             [Tensor]: [(seq_length, bsz, embed_dim)]
         """
-        phrase_info, parsed = self.__parse_func__(x, phrase_info)
+        parsed, phrase_info = self.__parse_func__(x, phrase_info)
         output = self.__repr_func__(parsed)
         return output
 
@@ -102,19 +102,19 @@ class PhraseGenerator(nn.Module):
 # 1. fixed_window √
 # 2. graph based ×
 class PhraseBuilder:
-    def __init__(self, phrase_info):
+    def __init__(self, phrase_args):
         """
         [Parsing the seq into Phrases, each sentence is parsed into multiple phrases]
 
         Args:
-            phrase_info ([dict]): [used for parsing]
+            phrase_args ([dict]): [used for parsing]
 
         Returns:
             [Tensor]: [phrase_len, phrase_num, bsz, embed_dim]
         """
-        self.parse_function = phrase_info['parse_function']
+        self.parse_function = phrase_args['parse_function']
         if(self.parse_function == 'fixed_window'):
-            self.window_size = phrase_info['window_size']
+            self.window_size = phrase_args['window_size']
 
     def __call__(self, x, phrase_info):
         """
@@ -149,7 +149,7 @@ class MultiPhraseAttention(nn.Module):
 
     See "Attention Is All You Need" for more details.
 
-    Note: By default the torch version MHA is turned on in MultiHeadAttention, but it is canceled in this class
+    Note: By default the torch version MHA is turned on in MultiHeadAttention, but it is canceled here
     """
 
     def __init__(
@@ -164,6 +164,7 @@ class MultiPhraseAttention(nn.Module):
         add_zero_attn=False,
         self_attention=False,
         encoder_decoder_attention=False,
+        phrase_args=None
     ):
         super().__init__()
         self.embed_dim = embed_dim
@@ -203,6 +204,8 @@ class MultiPhraseAttention(nn.Module):
         self.reset_parameters()
 
         self.onnx_trace = False
+
+        self.phrase_args = phrase_args
 
     def prepare_for_onnx_export_(self):
         self.onnx_trace = True
