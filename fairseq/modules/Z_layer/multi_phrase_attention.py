@@ -99,11 +99,11 @@ class PhraseGenerator(nn.Module):
             phrase_info ([dict]): [used for parsing]
 
         Returns:
-            [Tensor]: [(seq_length, bsz, embed_dim)]
+            [Tensor]: [(phrase_num, bsz, embed_dim)]
         """
         parsed, phrase_info = self.__parse_func__(x, phrase_info)
         output = self.__repr_func__(parsed)
-        return output
+        return output, phrase_info
 
 
 # Undone
@@ -130,14 +130,15 @@ class PhraseBuilder:
 
         Args:
             x ([Tensor]): (seq_len, bsz, embed_dim) the tensor in attention layer
-            phrase_info ([dict]): [used for parsing]
+            phrase_info ([dict]): [used for parsing and etc.]
 
         Returns:
             [Tensor]: [phrase_len, phrase_num, bsz, embed_dim]
         """
 
         if(self.parse_function == 'fixed_window'):
-            seq_length = x.size()[0]
+            seq_length = x.size(0)
+            bsz = x.size(1)
             chunks = ceil(seq_length / self.window_size)
             pad = (0, chunks * self.window_size - seq_length)
             # Padding Zero to the Tensor X
@@ -146,11 +147,20 @@ class PhraseBuilder:
             x = x.transpose(0, -1)
             x = x.chunk(chunks, dim=0)
             result = torch.stack(x, dim=1)
+            fixed_mu = torch.arange(
+                self.window_size, seq_length, self.window_size)
+            fixed_mu = fixed_mu.repeat(bsz, 1)
+            fixed_sigam = torch.full((seq_length, bsz), self.window_size/4)
+            phrase_info['fixed_mu'] = fixed_mu
+            phrase_info['fixed_sigma'] = fixed_sigam
 
         return result, phrase_info
 
 
 # Undone
+# 1. reset para
+# 2. forward
+# 3. init
 @with_incremental_state
 class MultiPhraseAttention(nn.Module):
     """Multi-headed attention.
@@ -240,7 +250,7 @@ class MultiPhraseAttention(nn.Module):
         if self.bias_v is not None:
             nn.init.xavier_normal_(self.bias_v)
 
-    def gauss_builder(self, mus, sigmas, seq_length):
+    def gauss_builder(self, mus, sigmas, weights, seq_length):
         """
         Generate Gauss attention
 
@@ -261,9 +271,9 @@ class MultiPhraseAttention(nn.Module):
         bsz = mus.size()[1]
         x = [torch.arange(0, seq_length) for i in range(bsz)]
         y = torch.zeros_like(torch.stack(x)).float()
-        for n, (i, m, s) in enumerate(zip(x, mus, sigmas)):
-            for mu, sigma in zip(m, s):
-                y[n] += gauss_distribution(mu, sigma, i)
+        for n, (i, m, s, w) in enumerate(zip(x, mus, sigmas, weights)):
+            for mu, sigma, weight in zip(m, s, w):
+                y[n] += weight * gauss_distribution(mu, sigma, i)
         gauss_attention = y
         return gauss_attention
 
@@ -324,7 +334,7 @@ class MultiPhraseAttention(nn.Module):
         # Here in self_attention, only query is needed
         if self.self_attention:
             q = self.q_proj(query)
-            k = self.k_proj(self.phrase_encoder(query))
+            k, phrase_info = self.k_proj(self.phrase_encoder(query, phrase_info))
             v = self.v_proj(query)
 
         # In encoder_decoder attention, phrase(k) and token(v) are provided by encoder
@@ -363,6 +373,12 @@ class MultiPhraseAttention(nn.Module):
                     dim=1,
                 )
 
+        # embed_dim = head_dim * head_num
+        # q: (tgt_len, bsz, embed_dim) -> (bsz * head_num, tgt_len, head_dim)
+        # k: (phrase_num, bsz, embed_dim) -> (bsz * head_num, phrase_num, head_dim)
+        # v: (src_len, bsz, embed_dim) -> (bsz * head_num, scr_len, head_dim)
+        # Now, the implement suppose fixed windows~
+        # graph based function is not supported yet
         q = (
             q.contiguous()
             .view(tgt_len, bsz * self.num_heads, self.head_dim)
@@ -407,7 +423,7 @@ class MultiPhraseAttention(nn.Module):
             if "prev_key_padding_mask" in saved_state:
                 prev_key_padding_mask = saved_state["prev_key_padding_mask"]
             assert k is not None and v is not None
-            key_padding_mask = MultiheadAttention._append_prev_key_padding_mask(
+            key_padding_mask = MultiPhraseAttention._append_prev_key_padding_mask(
                 key_padding_mask=key_padding_mask,
                 prev_key_padding_mask=prev_key_padding_mask,
                 batch_size=bsz,
@@ -458,8 +474,17 @@ class MultiPhraseAttention(nn.Module):
                     dim=1,
                 )
 
-        attn_weights = torch.bmm(q, k.transpose(1, 2))
-        attn_weights = MultiheadAttention.apply_sparse_mask(
+        # Calc gaussian weight
+        gauss_weight = torch.bmm(q, k.transpose(1, 2))
+        gauss_attn = self.gauss_builder(phrase_info['fixed_mus'], phrase_info['fixed_sigmas'], gauss_weight, tgt_len)
+
+        # Origin attention weight
+        # ori_attn_weights = torch.bmm(q, k.transpose(1, 2))
+
+        # attn
+        attn_weights = gauss_attn
+
+        attn_weights = MultiPhraseAttention.apply_sparse_mask(
             attn_weights, tgt_len, src_len, bsz)
 
         assert list(attn_weights.size()) == [
