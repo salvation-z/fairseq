@@ -6,7 +6,7 @@
 # Copied from transformer_layer.py
 # Change the attention calculating method
 # TODO:
-# 1. change into MultiPhraseAttention
+# 1. change into MultiPhraseAttention √
 
 from typing import Dict, List, Optional
 
@@ -14,11 +14,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from fairseq import utils
-from fairseq.modules import LayerNorm, MultiheadAttention
+from fairseq.modules import LayerNorm
+from fairseq.modules import MultiPhraseAttention
 from torch import Tensor
 
 
-class TransformerEncoderLayer(nn.Module):
+class PhraseTransformerEncoderLayer(nn.Module):
     """Encoder layer block.
 
     In the original paper each operation (multi-head attention or FFN) is
@@ -58,11 +59,12 @@ class TransformerEncoderLayer(nn.Module):
         return nn.Linear(input_dim, output_dim)
 
     def build_self_attention(self, embed_dim, args):
-        return MultiheadAttention(
+        return MultiPhraseAttention(
             embed_dim,
             args.encoder_attention_heads,
             dropout=args.attention_dropout,
             self_attention=True,
+            phrase_args=args,
         )
 
     def upgrade_state_dict_named(self, state_dict, name):
@@ -126,7 +128,7 @@ class TransformerEncoderLayer(nn.Module):
         return x
 
 
-class TransformerDecoderLayer(nn.Module):
+class PhraseTransformerDecoderLayer(nn.Module):
     """Decoder layer block.
 
     In the original paper each operation (multi-head attention, encoder
@@ -194,23 +196,25 @@ class TransformerDecoderLayer(nn.Module):
         return nn.Linear(input_dim, output_dim)
 
     def build_self_attention(self, embed_dim, args, add_bias_kv=False, add_zero_attn=False):
-        return MultiheadAttention(
+        return MultiPhraseAttention(
             embed_dim,
             args.decoder_attention_heads,
             dropout=args.attention_dropout,
             add_bias_kv=add_bias_kv,
             add_zero_attn=add_zero_attn,
             self_attention=not getattr(args, "cross_self_attention", False),
+            phrase_args=args,
         )
 
     def build_encoder_attention(self, embed_dim, args):
-        return MultiheadAttention(
+        return MultiPhraseAttention(
             embed_dim,
             args.decoder_attention_heads,
             kdim=getattr(args, "encoder_embed_dim", None),
             vdim=getattr(args, "encoder_embed_dim", None),
             dropout=args.attention_dropout,
             encoder_decoder_attention=True,
+            phrase_args=args,
         )
 
     def prepare_for_onnx_export_(self):

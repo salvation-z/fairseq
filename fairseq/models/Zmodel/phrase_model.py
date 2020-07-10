@@ -3,6 +3,10 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+from .phrase_model_arch import (
+    base_architecture,
+
+)
 import math
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -15,7 +19,6 @@ from fairseq.models import (
     FairseqEncoderDecoderModel,
     FairseqIncrementalDecoder,
     register_model,
-    register_model_architecture,
 )
 from fairseq.models.fairseq_encoder import EncoderOut
 from fairseq.modules import (
@@ -23,8 +26,9 @@ from fairseq.modules import (
     LayerNorm,
     PositionalEmbedding,
     SinusoidalPositionalEmbedding,
+    PhraseTransformerDecoderLayer,
+    PhraseTransformerEncoderLayer,
     TransformerDecoderLayer,
-    TransformerEncoderLayer,
 )
 from torch import Tensor
 
@@ -34,17 +38,18 @@ DEFAULT_MAX_TARGET_POSITIONS = 1024
 
 # New model for phrase-level machine translation
 # TODO
-# 1. Change self-attention layer (in new file)
-# 2. Change PhraseTransformerEncoder layer
+# 1. Change self-attention layer (in new file) √
+# 2. Change PhraseTransformerEncoder layer √
 # 3. Change PhraseTransformerEncoder
-# 4. Change PhraseTransformerDecoder layer
+# 4. Change PhraseTransformerDecoder layer √
 # 5. Change PhraseTransformerDecoder
 # 6. Add support for graph architecture(New data, New Task should be added)
+
 
 @register_model("phrase_transformer")
 class PhraseTransformerModel(FairseqEncoderDecoderModel):
     """
-    Changed from Transformer model from `"Attention Is All You Need" (Vaswani, et al, 2017)
+    Changed from Transformer model : `"Attention Is All You Need" (Vaswani, et al, 2017)
     <https://arxiv.org/abs/1706.03762>`_.
 
     Args:
@@ -137,6 +142,13 @@ class PhraseTransformerModel(FairseqEncoderDecoderModel):
                             help='add layernorm to embedding')
         parser.add_argument('--no-scale-embedding', action='store_true',
                             help='if True, dont scale embeddings')
+        # args for MultiPhraseAttention
+        parser.add_argument('--multihead-attention', default=True, action='store_true',
+                            help='if True, original multihead attention is added')
+        parser.add_argument('--gaussian-attention',  default=False, action='store_true',
+                            help='if Trhe, gaussian attention is turned on')
+        parser.add_argument('--parse-function', default='fixed_window', type='str',
+                            help='the function used to parse the sequence ')
         # fmt: on
 
     @classmethod
@@ -160,7 +172,8 @@ class PhraseTransformerModel(FairseqEncoderDecoderModel):
 
         if args.share_all_embeddings:
             if src_dict != tgt_dict:
-                raise ValueError("--share-all-embeddings requires a joined dictionary")
+                raise ValueError(
+                    "--share-all-embeddings requires a joined dictionary")
             if args.encoder_embed_dim != args.decoder_embed_dim:
                 raise ValueError(
                     "--share-all-embeddings requires --encoder-embed-dim to match --decoder-embed-dim"
@@ -206,12 +219,20 @@ class PhraseTransformerModel(FairseqEncoderDecoderModel):
 
     @classmethod
     def build_decoder(cls, args, tgt_dict, embed_tokens):
-        return PhraseTransformerDecoder(
-            args,
-            tgt_dict,
-            embed_tokens,
-            no_encoder_attn=getattr(args, "no_cross_attention", False),
-        )
+        if(args.phrase_decoder):
+            return PhraseTransformerDecoder(
+                args,
+                tgt_dict,
+                embed_tokens,
+                no_encoder_attn=getattr(args, "no_cross_attention", False),
+            )
+        else:
+            return TransformerDecoderLayer(
+                args,
+                tgt_dict,
+                embed_tokens,
+                no_encoder_attn=getattr(args, "no_cross_attention", False),
+            )
 
     # TorchScript doesn't support optional arguments with variable length (**kwargs).
     # Current workaround is to add union of all arguments in child classes.
@@ -287,7 +308,8 @@ class PhraseTransformerEncoder(FairseqEncoder):
 
         self.embed_tokens = embed_tokens
 
-        self.embed_scale = 1.0 if args.no_scale_embedding else math.sqrt(embed_dim)
+        self.embed_scale = 1.0 if args.no_scale_embedding else math.sqrt(
+            embed_dim)
 
         self.embed_positions = (
             PositionalEmbedding(
@@ -300,11 +322,13 @@ class PhraseTransformerEncoder(FairseqEncoder):
             else None
         )
 
-        self.layer_wise_attention = getattr(args, "layer_wise_attention", False)
+        self.layer_wise_attention = getattr(
+            args, "layer_wise_attention", False)
 
         self.layers = nn.ModuleList([])
         self.layers.extend(
-            [self.build_encoder_layer(args) for i in range(args.encoder_layers)]
+            [self.build_encoder_layer(args)
+             for i in range(args.encoder_layers)]
         )
         self.num_layers = len(self.layers)
 
@@ -318,7 +342,7 @@ class PhraseTransformerEncoder(FairseqEncoder):
             self.layernorm_embedding = None
 
     def build_encoder_layer(self, args):
-        return TransformerEncoderLayer(args)
+        return PhraseTransformerEncoderLayer(args)
 
     def forward_embedding(self, src_tokens):
         # embed tokens and positions
@@ -430,8 +454,10 @@ class PhraseTransformerEncoder(FairseqEncoder):
 
         return EncoderOut(
             encoder_out=new_encoder_out["encoder_out"],  # T x B x C
-            encoder_padding_mask=new_encoder_out["encoder_padding_mask"],  # B x T
-            encoder_embedding=new_encoder_out["encoder_embedding"],  # B x T x C
+            # B x T
+            encoder_padding_mask=new_encoder_out["encoder_padding_mask"],
+            # B x T x C
+            encoder_embedding=new_encoder_out["encoder_embedding"],
             encoder_states=encoder_states,  # List[T x B x C]
         )
 
@@ -453,7 +479,8 @@ class PhraseTransformerEncoder(FairseqEncoder):
             )
             if self._future_mask.size(0) < dim:
                 self._future_mask = torch.triu(
-                    utils.fill_with_neg_inf(self._future_mask.resize_(dim, dim)), 1
+                    utils.fill_with_neg_inf(
+                        self._future_mask.resize_(dim, dim)), 1
                 )
         return self._future_mask[:dim, :dim]
 
@@ -515,7 +542,8 @@ class PhraseTransformerDecoder(FairseqIncrementalDecoder):
 
         self.embed_tokens = embed_tokens
 
-        self.embed_scale = 1.0 if args.no_scale_embedding else math.sqrt(embed_dim)
+        self.embed_scale = 1.0 if args.no_scale_embedding else math.sqrt(
+            embed_dim)
 
         self.project_in_dim = (
             Linear(input_embed_dim, embed_dim, bias=False)
@@ -534,8 +562,10 @@ class PhraseTransformerDecoder(FairseqIncrementalDecoder):
             else None
         )
 
-        self.cross_self_attention = getattr(args, "cross_self_attention", False)
-        self.layer_wise_attention = getattr(args, "layer_wise_attention", False)
+        self.cross_self_attention = getattr(
+            args, "cross_self_attention", False)
+        self.layer_wise_attention = getattr(
+            args, "layer_wise_attention", False)
 
         self.layers = nn.ModuleList([])
         self.layers.extend(
@@ -568,7 +598,8 @@ class PhraseTransformerDecoder(FairseqIncrementalDecoder):
             self.embed_out = nn.Parameter(
                 torch.Tensor(len(dictionary), self.output_embed_dim)
             )
-            nn.init.normal_(self.embed_out, mean=0, std=self.output_embed_dim ** -0.5)
+            nn.init.normal_(self.embed_out, mean=0,
+                            std=self.output_embed_dim ** -0.5)
 
         if args.decoder_normalize_before and not getattr(
             args, "no_decoder_final_norm", False
@@ -582,7 +613,7 @@ class PhraseTransformerDecoder(FairseqIncrementalDecoder):
             self.layernorm_embedding = None
 
     def build_decoder_layer(self, args, no_encoder_attn=False):
-        return TransformerDecoderLayer(args, no_encoder_attn)
+        return PhraseTransformerDecoderLayer(args, no_encoder_attn)
 
     def forward(
         self,
@@ -804,7 +835,8 @@ class PhraseTransformerDecoder(FairseqIncrementalDecoder):
             }
             for old, new in layer_norm_map.items():
                 for m in ("weight", "bias"):
-                    k = "{}.layers.{}.layer_norms.{}.{}".format(name, i, old, m)
+                    k = "{}.layers.{}.layer_norms.{}.{}".format(
+                        name, i, old, m)
                     if k in state_dict:
                         state_dict[
                             "{}.layers.{}.{}.{}".format(name, i, new, m)
@@ -834,5 +866,3 @@ def Linear(in_features, out_features, bias=True):
     if bias:
         nn.init.constant_(m.bias, 0.0)
     return m
-
-from .phrase_model_arch import *

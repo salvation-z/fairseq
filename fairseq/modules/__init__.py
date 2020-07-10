@@ -32,6 +32,7 @@ from .vggblock import VGGBlock
 
 # Added by zzc
 from .Z_layer import MultiPhraseAttention
+from .Z_layer import PhraseTransformerEncoderLayer, PhraseTransformerDecoderLayer
 
 __all__ = [
     'AdaptiveInput',
@@ -65,5 +66,8 @@ __all__ = [
     'TransformerEncoderLayer',
     'VGGBlock',
     'unfold1d',
+    # Added by zzc
     'MultiPhraseAttention',
+    'PhraseTransformerEncoderLayer',
+    'PhraseTransformerDecoderLayer',
 ]

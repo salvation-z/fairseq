@@ -1,29 +1,35 @@
 from fairseq.models import register_model_architecture
 
-@register_model_architecture("transformer", "transformer")
+
+@register_model_architecture("phrase_transformer", "encoder_only")
 def base_architecture(args):
     args.encoder_embed_path = getattr(args, "encoder_embed_path", None)
     args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 512)
     args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 2048)
     args.encoder_layers = getattr(args, "encoder_layers", 6)
     args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 8)
-    args.encoder_normalize_before = getattr(args, "encoder_normalize_before", False)
+    args.encoder_normalize_before = getattr(
+        args, "encoder_normalize_before", False)
     args.encoder_learned_pos = getattr(args, "encoder_learned_pos", False)
     args.decoder_embed_path = getattr(args, "decoder_embed_path", None)
-    args.decoder_embed_dim = getattr(args, "decoder_embed_dim", args.encoder_embed_dim)
+    args.decoder_embed_dim = getattr(
+        args, "decoder_embed_dim", args.encoder_embed_dim)
     args.decoder_ffn_embed_dim = getattr(
         args, "decoder_ffn_embed_dim", args.encoder_ffn_embed_dim
     )
     args.decoder_layers = getattr(args, "decoder_layers", 6)
     args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 8)
-    args.decoder_normalize_before = getattr(args, "decoder_normalize_before", False)
+    args.decoder_normalize_before = getattr(
+        args, "decoder_normalize_before", False)
     args.decoder_learned_pos = getattr(args, "decoder_learned_pos", False)
     args.attention_dropout = getattr(args, "attention_dropout", 0.0)
     args.activation_dropout = getattr(args, "activation_dropout", 0.0)
     args.activation_fn = getattr(args, "activation_fn", "relu")
     args.dropout = getattr(args, "dropout", 0.1)
-    args.adaptive_softmax_cutoff = getattr(args, "adaptive_softmax_cutoff", None)
-    args.adaptive_softmax_dropout = getattr(args, "adaptive_softmax_dropout", 0)
+    args.adaptive_softmax_cutoff = getattr(
+        args, "adaptive_softmax_cutoff", None)
+    args.adaptive_softmax_dropout = getattr(
+        args, "adaptive_softmax_dropout", 0)
     args.share_decoder_input_output_embed = getattr(
         args, "share_decoder_input_output_embed", False
     )
@@ -39,10 +45,20 @@ def base_architecture(args):
     args.decoder_output_dim = getattr(
         args, "decoder_output_dim", args.decoder_embed_dim
     )
-    args.decoder_input_dim = getattr(args, "decoder_input_dim", args.decoder_embed_dim)
+    args.decoder_input_dim = getattr(
+        args, "decoder_input_dim", args.decoder_embed_dim)
 
     args.no_scale_embedding = getattr(args, "no_scale_embedding", False)
     args.layernorm_embedding = getattr(args, "layernorm_embedding", False)
+
+    # special arguments for phrase-level transformer
+    args.phrase_decoder = getattr(args, 'phrase_decoder', False)
+    args.gaussian_attention = getattr(args, 'gaussian_attention', False)
+    args.multihead_attention = getattr(args, 'multihead_attention', True)
+    args.parse_function = getattr(args, 'parse_function', 'fixed_window')
+    args.window_size = getattr(args, 'window_size', 3)
+    args.generate_function = getattr(args, 'generate_function', 'max-pooling')
+    args.center_first = getattr(args, 'center_first', False)
 
 
 @register_model_architecture("transformer", "transformer_iwslt_de_en")
@@ -69,7 +85,8 @@ def transformer_vaswani_wmt_en_de_big(args):
     args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 1024)
     args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 4096)
     args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 16)
-    args.encoder_normalize_before = getattr(args, "encoder_normalize_before", False)
+    args.encoder_normalize_before = getattr(
+        args, "encoder_normalize_before", False)
     args.decoder_embed_dim = getattr(args, "decoder_embed_dim", 1024)
     args.decoder_ffn_embed_dim = getattr(args, "decoder_ffn_embed_dim", 4096)
     args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 16)
@@ -86,8 +103,10 @@ def transformer_wmt_en_de_big(args):
 # default parameters used in tensor2tensor implementation
 @register_model_architecture("transformer", "transformer_wmt_en_de_big_t2t")
 def transformer_wmt_en_de_big_t2t(args):
-    args.encoder_normalize_before = getattr(args, "encoder_normalize_before", True)
-    args.decoder_normalize_before = getattr(args, "decoder_normalize_before", True)
+    args.encoder_normalize_before = getattr(
+        args, "encoder_normalize_before", True)
+    args.decoder_normalize_before = getattr(
+        args, "decoder_normalize_before", True)
     args.attention_dropout = getattr(args, "attention_dropout", 0.1)
     args.activation_dropout = getattr(args, "activation_dropout", 0.1)
     transformer_vaswani_wmt_en_de_big(args)
@@ -97,7 +116,8 @@ def transformer_wmt_en_de_big_t2t(args):
 def transformer_align(args):
     args.alignment_heads = getattr(args, "alignment_heads", 1)
     args.alignment_layer = getattr(args, "alignment_layer", 4)
-    args.full_context_alignment = getattr(args, "full_context_alignment", False)
+    args.full_context_alignment = getattr(
+        args, "full_context_alignment", False)
     base_architecture(args)
 
 

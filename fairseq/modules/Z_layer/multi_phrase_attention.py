@@ -47,11 +47,11 @@ class PhraseGenerator(nn.Module):
         Args:
             embed_dim ([int]): [the input dimension (is the same as output dimension)]
             generate_function ([str]): using different phrase generate functions
-            center_first ([bool, default None]): whether let the 1st token be the center of the phrase
+            center_first ([bool, default None]): whether let the 1st token to be the center of the phrase
         """
         super().__init__()
-        generate_function = phrase_args['generate_function']
-        center_first = phrase_args['center_first']
+        generate_function = phrase_args.generate_function
+        center_first = phrase_args.center_first
         self.__parse_func__ = PhraseBuilder(phrase_args)
         # Basic function
         if(generate_function == 'max-pooling'):
@@ -120,9 +120,12 @@ class PhraseBuilder:
         Returns:
             [Tensor]: [phrase_len, phrase_num, bsz, embed_dim]
         """
-        self.parse_function = phrase_args['parse_function']
+        self.parse_function = phrase_args.parse_function
         if(self.parse_function == 'fixed_window'):
-            self.window_size = phrase_args['window_size']
+            assert 'window_size' in dir(phrase_args), (
+                'Using fixed window, but the size of window is not indicated'
+            )
+            self.window_size = phrase_args.window_size
 
     def __call__(self, x, phrase_info):
         """
@@ -158,16 +161,18 @@ class PhraseBuilder:
 
 
 # Undone
-# 1. reset para
-# 2. forward
-# 3. init
+# 1. reset para (for max/mean pooling there is no para ~~)
+# 2. forward √
+# 3. init √
 @with_incremental_state
 class MultiPhraseAttention(nn.Module):
     """Multi-headed attention.
 
     See "Attention Is All You Need" for more details.
 
-    Note: By default the torch version MHA is turned on in MultiHeadAttention, but it is canceled here
+    Note:
+        1. By default the torch version MHA is turned on in MultiHeadAttention, but it is deleted here
+        2. The add_zero_attention is also deleted here, because i have no idea what it is
     """
 
     def __init__(
@@ -182,9 +187,27 @@ class MultiPhraseAttention(nn.Module):
         add_zero_attn=False,
         self_attention=False,
         encoder_decoder_attention=False,
-        phrase_args=None
+        phrase_args=None,
+        apply_phrase=False,
     ):
         super().__init__()
+
+        # if both attention is turned on, there will be two W_k and W_q (W_v will remain the same as origin)
+        self.gaussian_attention = self.phrase_args.gaussian_attention
+        self.multihead_attention = self.phrase_args.multihead_attention
+        assert self.multihead_attention or self.gaussian_attention, (
+            'At least one attention should be added'
+        )
+        # init for phrase repr
+        self.apply_phrase = apply_phrase
+        self.phrase_args = phrase_args
+        # If apply_phrase is set True, we supposed that the key is tokens
+        # If apply_phrase is set False, we sepposed that the key is phrase
+        if(self.apply_phrase):
+            self.phrase_encoder = PhraseGenerator(phrase_args)
+            assert self.gaussian_attention
+
+        # original args
         self.embed_dim = embed_dim
         self.kdim = kdim if kdim is not None else embed_dim
         self.vdim = vdim if vdim is not None else embed_dim
@@ -198,34 +221,43 @@ class MultiPhraseAttention(nn.Module):
         ), "embed_dim must be divisible by num_heads"
         self.scaling = self.head_dim ** -0.5
 
+        # Note:
+        # 1. if self_attention=True, apply_phrase should also be True
+        # 2. if encoder_decoder_attention=True, apply_phrase should be False
         self.self_attention = self_attention
+        if(self.self_attention):
+            assert self.apply_phrase
         self.encoder_decoder_attention = encoder_decoder_attention
+        if(self.encoder_decoder_attention):
+            assert not self.apply_phrase
 
         assert not self.self_attention or self.qkv_same_dim, (
             "Self-attention requires query, key and " "value to be of the same size"
         )
 
-        self.k_proj = nn.Linear(self.kdim, embed_dim, bias=bias)
+        # projection layers
+        if(self.gaussian_attention):
+            self.k_proj_gauss = nn.Linear(self.kdim, embed_dim, bias=bias)
+            self.q_proj_gauss = nn.Linear(embed_dim, embed_dim, bias=bias)
+        if(self.multihead_attention):
+            self.k_proj_base = nn.Linear(self.kdim, embed_dim, bias=bias)
+            self.q_proj_base = nn.Linear(embed_dim, embed_dim, bias=bias)
         self.v_proj = nn.Linear(self.vdim, embed_dim, bias=bias)
-        self.q_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
 
         self.out_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
 
         if add_bias_kv:
-            self.bias_k = Parameter(torch.Tensor(1, 1, embed_dim))
+            if(self.gaussian_attention):
+                self.bias_k_gauss = Parameter(torch.Tensor(1, 1, embed_dim))
+            if(self.multihead_attention):
+                self.bias_k_base = Parameter(torch.Tensor(1, 1, embed_dim))
             self.bias_v = Parameter(torch.Tensor(1, 1, embed_dim))
         else:
-            self.bias_k = self.bias_v = None
-
-        self.add_zero_attn = add_zero_attn
+            self.bias_k_gauss = self.bias_v = self.bias_k_base = None
 
         self.reset_parameters()
 
         self.onnx_trace = False
-
-        self.phrase_args = phrase_args
-        if(self.self_attention):
-            self.phrase_encoder = PhraseGenerator(phrase_args)
 
     def prepare_for_onnx_export_(self):
         self.onnx_trace = True
@@ -234,19 +266,33 @@ class MultiPhraseAttention(nn.Module):
         if self.qkv_same_dim:
             # Empirically observed the convergence to be much better with
             # the scaled initialization
-            nn.init.xavier_uniform_(self.k_proj.weight, gain=1 / math.sqrt(2))
+            if(self.gaussian_attention):
+                nn.init.xavier_uniform_(
+                    self.k_proj_gauss.weight, gain=1 / math.sqrt(2))
+                nn.init.xavier_uniform_(
+                    self.q_proj_gauss.weight, gain=1 / math.sqrt(2))
+            if(self.multihead_attention):
+                nn.init.xavier_uniform_(
+                    self.k_proj_base.weight, gain=1 / math.sqrt(2))
+                nn.init.xavier_uniform_(
+                    self.q_proj_base.weight, gain=1 / math.sqrt(2))
             nn.init.xavier_uniform_(self.v_proj.weight, gain=1 / math.sqrt(2))
-            nn.init.xavier_uniform_(self.q_proj.weight, gain=1 / math.sqrt(2))
         else:
-            nn.init.xavier_uniform_(self.k_proj.weight)
+            if(self.gaussian_attention):
+                nn.init.xavier_uniform_(self.k_proj_gauss.weight)
+                nn.init.xavier_uniform_(self.q_proj_gauss.weight)
+            if(self.multihead_attention):
+                nn.init.xavier_uniform_(self.k_proj_base.weight)
+                nn.init.xavier_uniform_(self.q_proj_base.weight)
             nn.init.xavier_uniform_(self.v_proj.weight)
-            nn.init.xavier_uniform_(self.q_proj.weight)
 
         nn.init.xavier_uniform_(self.out_proj.weight)
         if self.out_proj.bias is not None:
             nn.init.constant_(self.out_proj.bias, 0.)
-        if self.bias_k is not None:
-            nn.init.xavier_normal_(self.bias_k)
+        if self.bias_k_gauss is not None:
+            nn.init.xavier_normal_(self.bias_k_gauss)
+        if self.bias_k_base is not None:
+            nn.init.xavier_normal_(self.bias_k_base)
         if self.bias_v is not None:
             nn.init.xavier_normal_(self.bias_v)
 
@@ -290,6 +336,7 @@ class MultiPhraseAttention(nn.Module):
         before_softmax: bool = False,
         need_head_weights: bool = False,
         phrase_info: dict = None,
+        need_phrase: bool = False,
     ) -> Tuple[Tensor, Optional[Tensor]]:
         """Input shape: Time x Batch x Channel
 
@@ -307,15 +354,17 @@ class MultiPhraseAttention(nn.Module):
             need_head_weights (bool, optional): return the attention
                 weights for each head. Implies *need_weights*. Default:
                 return the average attention weights over all heads.
-            phrase_info (dict, optional): used for phrase parsing
 
             query: tokens(source side)
             key: phrase repr
             value: tokens(source/target side)
+            phrase_info (dict, optional): used for phrase parsing
+            need_phrase (bool, False): return the phrase repr
         """
         if need_head_weights:
             need_weights = True
 
+        key_phrase = None
         tgt_len, bsz, embed_dim = query.size()
         assert embed_dim == self.embed_dim
         assert list(query.size()) == [tgt_len, bsz, embed_dim]
@@ -333,31 +382,69 @@ class MultiPhraseAttention(nn.Module):
 
         # Here in self_attention, only query is needed
         if self.self_attention:
-            q = self.q_proj(query)
-            k, phrase_info = self.k_proj(self.phrase_encoder(query, phrase_info))
+            if(self.multihead_attention):
+                q_base = self.q_proj_base(query)
+                k_base = self.k_proj_base(query)
+            if(self.gaussian_attention):
+                q_gauss = self.q_proj_gauss(query)
+                key_phrase = self.phrase_encoder(query, phrase_info)
+                k_gauss = self.k_proj_gauss(key_phrase)
             v = self.v_proj(query)
 
         # In encoder_decoder attention, phrase(k) and token(v) are provided by encoder
         # while token(q) is provided by decoder
         elif self.encoder_decoder_attention:
-            q = self.q_proj(query)
-            if key is None:
-                assert value is None
-                k = v = None
-            else:
-                k = self.k_proj(key)
-                v = self.v_proj(key)
-
+            # Basic multihead attention's k&v are provided by encoder and k = v
+            if(self.multihead_attention):
+                q_base = self.q_proj_base(query)
+                if key is None:
+                    assert value is None
+                    k_base = v = None
+                else:
+                    k_base = self.k_proj_base(key)
+                    v = self.v_proj(key)
+            # Gaussian attention's key&value are provided by encoder but key!=value
+            # Not that there is no need to build phrase in decoder, because it is done by the encoder
+            if(self.gaussian_attention):
+                q_gauss = self.q_proj_gauss(query)
+                if key is None:
+                    assert value is None
+                    k_gauss = v = None
+                else:
+                    assert key is not None
+                    assert value is not None
+                    key_phrase = key
+                    k_gauss = self.k_proj_gauss(key)
+                    v = self.v_proj(value)
         else:
+            # Note:
+            # If both key and value are provided, and apply_phrase is set False,
+            # we supposed that key is phrase repr,
+            # which means no PhraseEncoder will be added here
             assert key is not None and value is not None
-            q = self.q_proj(query)
-            k = self.k_proj(key)
+            if(self.multihead_attention):
+                q_base = self.q_proj_base(query)
+                k_base = self.k_proj_base(key)
+            if(self.gaussian_attention):
+                q_gauss = self.q_proj_gauss(query)
+                if(self.apply_phrase):
+                    key_phrase = self.phrase_encoder(query, phrase_info)
+                    k_gauss = self.k_proj_gauss(key_phrase)
+                else:
+                    k_gauss = self.k_proj_gauss(key)
             v = self.v_proj(value)
-        q *= self.scaling
 
-        if self.bias_k is not None:
+        q_base *= self.scaling
+        q_gauss *= self.scaling
+
+        if self.bias_k_base is not None:
+            k_base = torch.cat([k_base, self.bias_k_base.repeat(1, bsz, 1)])
+
+        if self.bias_k_gauss is not None:
+            k_gauss = torch.cat([k_gauss, self.bias_k_gauss.repeat(1, bsz, 1)])
+
+        if(self.bias_k_base or self.bias_k_gauss):
             assert self.bias_v is not None
-            k = torch.cat([k, self.bias_k.repeat(1, bsz, 1)])
             v = torch.cat([v, self.bias_v.repeat(1, bsz, 1)])
             if attn_mask is not None:
                 attn_mask = torch.cat(
@@ -377,19 +464,32 @@ class MultiPhraseAttention(nn.Module):
         # q: (tgt_len, bsz, embed_dim) -> (bsz * head_num, tgt_len, head_dim)
         # k: (phrase_num, bsz, embed_dim) -> (bsz * head_num, phrase_num, head_dim)
         # v: (src_len, bsz, embed_dim) -> (bsz * head_num, scr_len, head_dim)
-        # Now, the implement suppose fixed windows~
-        # graph based function is not supported yet
-        q = (
-            q.contiguous()
-            .view(tgt_len, bsz * self.num_heads, self.head_dim)
-            .transpose(0, 1)
-        )
-        if k is not None:
-            k = (
-                k.contiguous()
-                .view(-1, bsz * self.num_heads, self.head_dim)
+        # Now, the implement suppose fixed window~
+        # TODO graph based function is not supported yet
+        if(self.multihead_attention):
+            q_base = (
+                q_base.contiguous()
+                .view(tgt_len, bsz * self.num_heads, self.head_dim)
                 .transpose(0, 1)
             )
+            if k_base is not None:
+                k_base = (
+                    k_base.contiguous()
+                    .view(-1, bsz * self.num_heads, self.head_dim)
+                    .transpose(0, 1)
+                )
+        if(self.gaussian_attention):
+            q_gauss = (
+                q_gauss.contiguous()
+                .view(tgt_len, bsz * self.num_heads, self.head_dim)
+                .transpose(0, 1)
+            )
+            if k_gauss is not None:
+                k_gauss = (
+                    k_gauss.contiguous()
+                    .view(-1, bsz * self.num_heads, self.head_dim)
+                    .transpose(0, 1)
+                )
         if v is not None:
             v = (
                 v.contiguous()
@@ -399,16 +499,31 @@ class MultiPhraseAttention(nn.Module):
 
         if saved_state is not None:
             # saved states are stored with shape (bsz, num_heads, seq_len, head_dim)
-            if "prev_key" in saved_state:
-                _prev_key = saved_state["prev_key"]
-                assert _prev_key is not None
-                prev_key = _prev_key.view(
+            # From saved_state get keys
+            if "prev_key_base" in saved_state:
+                assert self.multihead_attention
+                _prev_key_base = saved_state["prev_key_base"]
+                assert _prev_key_base is not None
+                prev_key_base = _prev_key_base.view(
                     bsz * self.num_heads, -1, self.head_dim)
                 if static_kv:
-                    k = prev_key
+                    k_base = prev_key_base
                 else:
-                    assert k is not None
-                    k = torch.cat([prev_key, k], dim=1)
+                    assert k_base is not None
+                    k_base = torch.cat([prev_key_base, k_base], dim=1)
+            if "prev_key_gauss" in saved_state:
+                assert self.gaussian_attention
+                _prev_key_gauss = saved_state["prev_key_gauss"]
+                assert _prev_key_gauss is not None
+                prev_key_gauss = _prev_key_gauss.view(
+                    bsz * self.num_heads, -1, self.head_dim)
+                if static_kv:
+                    k_gauss = prev_key_gauss
+                else:
+                    assert k_gauss is not None
+                    k_gauss = torch.cat([prev_key_gauss, k_gauss], dim=1)
+
+            # From saved_state get values
             if "prev_value" in saved_state:
                 _prev_value = saved_state["prev_value"]
                 assert _prev_value is not None
@@ -419,20 +534,30 @@ class MultiPhraseAttention(nn.Module):
                 else:
                     assert v is not None
                     v = torch.cat([prev_value, v], dim=1)
+
+            # apply saved mask
             prev_key_padding_mask: Optional[Tensor] = None
             if "prev_key_padding_mask" in saved_state:
                 prev_key_padding_mask = saved_state["prev_key_padding_mask"]
-            assert k is not None and v is not None
+
+            assert v is not None
+            assert k_base or k_gauss
+
             key_padding_mask = MultiPhraseAttention._append_prev_key_padding_mask(
                 key_padding_mask=key_padding_mask,
                 prev_key_padding_mask=prev_key_padding_mask,
                 batch_size=bsz,
-                src_len=k.size(1),
+                src_len=k_base.size(1),
                 static_kv=static_kv,
             )
 
-            saved_state["prev_key"] = k.view(
-                bsz, self.num_heads, -1, self.head_dim)
+            # save the newest state
+            if(self.multihead_attention):
+                saved_state["prev_key_base"] = k_base.view(
+                    bsz, self.num_heads, -1, self.head_dim)
+            if(self.gaussian_attention):
+                saved_state["prev_key_gauss"] = k_gauss.view(
+                    bsz, self.num_heads, -1, self.head_dim)
             saved_state["prev_value"] = v.view(
                 bsz, self.num_heads, -1, self.head_dim)
             saved_state["prev_key_padding_mask"] = key_padding_mask
@@ -440,8 +565,13 @@ class MultiPhraseAttention(nn.Module):
             assert incremental_state is not None
             incremental_state = self._set_input_buffer(
                 incremental_state, saved_state)
-        assert k is not None
-        src_len = k.size(1)
+
+        if(self.multihead_attention):
+            assert k_base is not None
+            src_len = k_base.size(1)
+        else:
+            assert k_gauss is not None
+            src_len = k_gauss.size(1)
 
         # This is part of a workaround to get around fork/join parallelism
         # not supporting Optional types.
@@ -452,37 +582,24 @@ class MultiPhraseAttention(nn.Module):
             assert key_padding_mask.size(0) == bsz
             assert key_padding_mask.size(1) == src_len
 
-        if self.add_zero_attn:
-            assert v is not None
-            src_len += 1
-            k = torch.cat(
-                [k, k.new_zeros((k.size(0), 1) + k.size()[2:])], dim=1)
-            v = torch.cat(
-                [v, v.new_zeros((v.size(0), 1) + v.size()[2:])], dim=1)
-            if attn_mask is not None:
-                attn_mask = torch.cat(
-                    [attn_mask, attn_mask.new_zeros(attn_mask.size(0), 1)], dim=1
-                )
-            if key_padding_mask is not None:
-                key_padding_mask = torch.cat(
-                    [
-                        key_padding_mask,
-                        torch.zeros(key_padding_mask.size(0), 1).type_as(
-                            key_padding_mask
-                        ),
-                    ],
-                    dim=1,
-                )
+        # calc multihead attention
+        if(self.multihead_attention):
+            base_attn = torch.bmm(q_base, k_base.transpose(1, 2))
+        else:
+            base_attn = None
 
-        # Calc gaussian weight
-        gauss_weight = torch.bmm(q, k.transpose(1, 2))
-        gauss_attn = self.gauss_builder(phrase_info['fixed_mus'], phrase_info['fixed_sigmas'], gauss_weight, tgt_len)
+        # calc gaussian attention
+        if(self.gaussian_attention):
+            gauss_weight = torch.bmm(q_gauss, k_gauss.transpose(1, 2))
+            gauss_attn = self.gauss_builder(
+                phrase_info['fixed_mus'], phrase_info['fixed_sigmas'], gauss_weight, tgt_len)
+            if(base_attn is None):
+                base_attn = torch.zeros_like(gauss_attn)
+        else:
+            gauss_attn = torch.zeros_like(base_attn)
 
-        # Origin attention weight
-        # ori_attn_weights = torch.bmm(q, k.transpose(1, 2))
-
-        # attn
-        attn_weights = gauss_attn
+        # add attention together (maybe add after softmax is better? )
+        attn_weights = gauss_attn + base_attn
 
         attn_weights = MultiPhraseAttention.apply_sparse_mask(
             attn_weights, tgt_len, src_len, bsz)
@@ -510,6 +627,7 @@ class MultiPhraseAttention(nn.Module):
         if before_softmax:
             return attn_weights, v
 
+        # apply softmax and dropout
         attn_weights_float = utils.softmax(
             attn_weights, dim=-1, onnx_trace=self.onnx_trace
         )
@@ -519,6 +637,8 @@ class MultiPhraseAttention(nn.Module):
             p=self.dropout,
             training=self.training,
         )
+
+        # apply attention
         assert v is not None
         attn = torch.bmm(attn_probs, v)
         assert list(attn.size()) == [
@@ -540,6 +660,9 @@ class MultiPhraseAttention(nn.Module):
                 # average attention weights over heads
                 attn_weights = attn_weights.mean(dim=0)
 
+        if(need_phrase):
+            assert key_phrase is not None
+            return attn, attn_weights, key_phrase
         return attn, attn_weights
 
     @staticmethod
