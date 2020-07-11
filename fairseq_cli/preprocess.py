@@ -251,12 +251,14 @@ def main(args):
             make_dataset(vocab, args.trainpref, "train", lang, num_workers=args.workers)
         if args.validpref:
             for k, validpref in enumerate(args.validpref.split(",")):
-                validpref = os.path.join(os.getenv('DataPath'), validpref)
+                if(os.getenv('DataPath') is not None):
+                    validpref = os.path.join(os.getenv('DataPath'), validpref)
                 outprefix = "valid{}".format(k) if k > 0 else "valid"
                 make_dataset(vocab, validpref, outprefix, lang, num_workers=args.workers)
         if args.testpref:
             for k, testpref in enumerate(args.testpref.split(",")):
-                testpref = os.path.join(os.getenv('DataPath'), testpref)
+                if(os.getenv('DataPath') is not None):
+                    testpref = os.path.join(os.getenv('DataPath'), testpref)
                 outprefix = "test{}".format(k) if k > 0 else "test"
                 make_dataset(vocab, testpref, outprefix, lang, num_workers=args.workers)
 
