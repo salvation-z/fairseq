@@ -52,19 +52,20 @@
         // 1. CUDA_VISIBLE_DEVICES
         // 2. Dataset path
         // 3. save_dir
+        // 4. In original Transformer, training step is 100k
         {
-            "name": "Python: en_de translate",
+            "name": "Python: translate",
             "type": "python",
             "request": "launch",
-            "program": "/home5/zhangzhuocheng/lab/pos_graph/fairseq/train.py",
+            "program": "/home2/zhangzhuocheng/lab/torch15/fairseq_z/fairseq/train.py",
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
             "env": {"CUDA_VISIBLE_DEVICES": "0,1,2,3"},
             "args": [
-                "/home5/zhangzhuocheng/lab/pos_graph/datasets/data-bin",
-                "--task", "pos_translation",
-                "--arch", "gnn_transformer_base",
-                "--save-dir", "/home5/zhangzhuocheng/lab/pos_graph/models/pos_base/",
+                "/home2/zhangzhuocheng/lab/translation/datasets/zh_en/std/bin",
+                "--task", "translation",
+                "--arch", "phrase_baseline",
+                "--save-dir", "/home2/zhangzhuocheng/lab/translation/models/phrase/zh_en_baseline",
                 "--optimizer", "adam",
                 "--adam-betas", "(0.9, 0.98)",
                 "--clip-norm", "0.0",
@@ -81,9 +82,7 @@
                 "--update-freq", "2",
                 "--log-format", "json",
                 "--log-interval", "100",
-                "--save-interval-updates", "1000",
                 "--max-update", "150000",
-                "--keep-interval-updates", "5",
                 "--keep-last-epochs", "5",
                 "--eval-bleu",
                 "--eval-bleu-args", "{\"beam\": 5, \"max_len_a\": 1.2, \"max_len_b\": 10}",

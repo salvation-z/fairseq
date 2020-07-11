@@ -105,15 +105,26 @@ class PhraseTransformerEncoderLayer(nn.Module):
         if attn_mask is not None:
             attn_mask = attn_mask.masked_fill(attn_mask.to(torch.bool), -1e8)
         # attention applied here
-        x, _, phrase = self.self_attn(
-            query=x,
-            key=x,
-            value=x,
-            key_padding_mask=encoder_padding_mask,
-            attn_mask=attn_mask,
-            phrase_info={},
-            need_phrase=need_phrase,
-        )
+        if(need_phrase):
+            x, _, phrase = self.self_attn(
+                query=x,
+                key=x,
+                value=x,
+                key_padding_mask=encoder_padding_mask,
+                attn_mask=attn_mask,
+                phrase_info={},
+                need_phrase=need_phrase,
+            )
+        else:
+            x, _ = self.self_attn(
+                query=x,
+                key=x,
+                value=x,
+                key_padding_mask=encoder_padding_mask,
+                attn_mask=attn_mask,
+                phrase_info={},
+                need_phrase=need_phrase,
+            )
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = residual + x
         if not self.normalize_before:

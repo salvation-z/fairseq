@@ -28,10 +28,10 @@ from fairseq.modules import (
     SinusoidalPositionalEmbedding,
     PhraseTransformerDecoderLayer,
     PhraseTransformerEncoderLayer,
-    TransformerDecoderLayer,
 )
 from torch import Tensor
 
+from ..transformer import TransformerDecoder
 
 DEFAULT_MAX_SOURCE_POSITIONS = 1024
 DEFAULT_MAX_TARGET_POSITIONS = 1024
@@ -149,14 +149,16 @@ class PhraseTransformerModel(FairseqEncoderDecoderModel):
                             help='if Trhe, gaussian attention is turned on')
         parser.add_argument('--parse-function', default='fixed_window', type=str,
                             help='the function used to parse the sequence ')
+        parser.add_argument('--need-phrase', default=False, action='store_true',
+                            help='return the phrase repr when forwarding')
         # fmt: on
 
     @classmethod
     def build_model(cls, args, task):
         """Build a new model instance."""
-        from .phrase_model_arch import base_architecture
+        from .phrase_model_arch import baseline_architecture
         # make sure all arguments are present in older models
-        base_architecture(args)
+        baseline_architecture(args)
 
         if args.encoder_layers_to_keep:
             args.encoder_layers = len(args.encoder_layers_to_keep.split(","))
@@ -227,7 +229,7 @@ class PhraseTransformerModel(FairseqEncoderDecoderModel):
                 no_encoder_attn=getattr(args, "no_cross_attention", False),
             )
         else:
-            return TransformerDecoderLayer(
+            return TransformerDecoder(
                 args,
                 tgt_dict,
                 embed_tokens,
@@ -341,6 +343,8 @@ class PhraseTransformerEncoder(FairseqEncoder):
         else:
             self.layernorm_embedding = None
 
+        self.need_phrase = args.need_phrase
+
     def build_encoder_layer(self, args):
         return PhraseTransformerEncoderLayer(args)
 
@@ -400,7 +404,7 @@ class PhraseTransformerEncoder(FairseqEncoder):
             # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
             dropout_probability = torch.empty(1).uniform_()
             if not self.training or (dropout_probability > self.encoder_layerdrop):
-                x = layer(x, encoder_padding_mask)
+                x = layer(x, encoder_padding_mask, need_phrase=self.need_phrase)
                 if return_all_hiddens:
                     assert encoder_states is not None
                     encoder_states.append(x)

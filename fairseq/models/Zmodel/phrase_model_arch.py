@@ -1,8 +1,8 @@
 from fairseq.models import register_model_architecture
 
 
-@register_model_architecture("phrase_transformer", "encoder_only")
-def base_architecture(args):
+@register_model_architecture("phrase_transformer", "phrase_encoder_only")
+def encoderonly_architecture(args):
     args.encoder_embed_path = getattr(args, "encoder_embed_path", None)
     args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 512)
     args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 2048)

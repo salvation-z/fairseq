@@ -4,7 +4,7 @@
 position=/home2/zhangzhuocheng/lab/translation/datasets/zh_en/std
 fairseq-preprocess --source-lang zh --target-lang en --trainpref $position/source/train_bpe30k --validpref $position/source/mt08_u8 --testpref $position/source/mt02_u8,$position/source/mt03_u8,$position/source/mt04_u8,$position/source/mt05_u8,$position/source/mt06_u8 --destdir $position/bin --workers 10
 
-## train
+## train baseline
 CUDA_VISIBLE_DEVICES=0,1,2,3 fairseq-train \
     /home2/zhangzhuocheng/lab/translation/datasets/zh_en/std/bin \
     --arch phrase_baseline \
@@ -20,4 +20,5 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 fairseq-train \
     --eval-bleu-print-samples \
     --best-checkpoint-metric bleu --maximize-best-checkpoint-metric \
     --save-dir /home2/zhangzhuocheng/lab/translation/models/phrase/zh_en_baseline \
-    --keep-last-epochs 5
+    --keep-last-epochs 5 \
+    --log-format json

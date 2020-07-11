@@ -437,8 +437,10 @@ class MultiPhraseAttention(nn.Module):
                     k_gauss = self.k_proj_gauss(key)
             v = self.v_proj(value)
 
-        q_base *= self.scaling
-        q_gauss *= self.scaling
+        if(self.multihead_attention):
+            q_base *= self.scaling
+        if(self.gaussian_attention):
+            q_gauss *= self.scaling
 
         if self.bias_k_base is not None:
             k_base = torch.cat([k_base, self.bias_k_base.repeat(1, bsz, 1)])
