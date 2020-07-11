@@ -1,3 +1,4 @@
+# from .pos_graph_arch import gat_architecture, gcn_architecture, base_architecture
 import math
 import torch
 from torch import Tensor
@@ -30,6 +31,7 @@ from ..transformer import TransformerDecoder
 DEFAULT_MAX_SOURCE_POSITIONS = 1024
 DEFAULT_MAX_TARGET_POSITIONS = 1024
 
+
 class simple_detok:
     def __init__(self, dict_path='/home5/zhangzhuocheng/lab/pos_graph/datasets/tiny-bin/dict.en.txt'):
         super().__init__()
@@ -55,7 +57,9 @@ class simple_detok:
             result.append(self.decode_line(i))
         return result
 
-detoker = simple_detok()
+
+# detoker = simple_detok()
+
 
 class GATLayer(nn.Module):
 
@@ -67,7 +71,7 @@ class GATLayer(nn.Module):
             args.gnn_hidden_states {int} -- hidden state of attention(each attention head got hidden_state/heads state)
             args.gnn_heads {int} -- heads of multihead-attention
             args.gnn_dropout_rate {float} -- [dropout rate of GAT layers] (default: {0.6})
-        
+
         Virtual arguments:
             args.gnn_input_features {int} -- input features = args.encoder-embed-dim
             args.gnn_output_features {int} -- output features = args.encoder-embed-dim
@@ -81,13 +85,13 @@ class GATLayer(nn.Module):
             for n in range(args.gnn_layers):
                 if(n == 0):
                     self.layers.append(GATConv(args.former_encoder_dim, int(args.gnn_hidden_states/args.gnn_heads),
-                                            heads=args.gnn_heads, dropout=args.gnn_dropout_rate))
+                                               heads=args.gnn_heads, dropout=args.gnn_dropout_rate))
                 elif(n == args.gnn_layers-1):
                     self.layers.append(GATConv(args.gnn_hidden_states, args.latter_encoder_dim,
-                                            heads=args.gnn_heads, dropout=args.gnn_dropout_rate, concat=False))
+                                               heads=args.gnn_heads, dropout=args.gnn_dropout_rate, concat=False))
                 else:
                     self.layers.append(GATConv(args.gnn_hidden_states, int(args.gnn_hidden_states/args.gnn_heads),
-                                            heads=args.gnn_heads, dropout=args.gnn_dropout_rate))
+                                               heads=args.gnn_heads, dropout=args.gnn_dropout_rate))
         else:
             self.layers.append(GATConv(args.former_encoder_dim, args.latter_encoder_dim,
                                        heads=args.gnn_heads, dropout=args.gnn_dropout_rate, concat=False))
@@ -126,6 +130,7 @@ class GATLayer(nn.Module):
         output = conv_x.view(seq_len, bsz, embed_dim)
         return output
 
+
 class NoGNN(nn.Module):
 
     def __init__(self, args):
@@ -145,6 +150,7 @@ class NoGNN(nn.Module):
         """
         return x
 
+
 class GCNLayer(nn.Module):
 
     def __init__(self, args):
@@ -154,7 +160,7 @@ class GCNLayer(nn.Module):
             args.gnn_layers {int>=2} -- number of gnn layers
             args.gnn_hidden_states {int} -- hidden state of attention(each attention head got hidden_state state)
             args.gnn_dropout_rate {float} -- [dropout rate of GAT layers] (default: {0.6})
-        
+
         Virtual arguments:
             args.gnn_input_features {int} -- input features = args.encoder-embed-dim
             args.gnn_output_features {int} -- output features = args.encoder-embed-dim
@@ -167,13 +173,17 @@ class GCNLayer(nn.Module):
         if(args.gnn_layers > 1):
             for n in range(args.gnn_layers):
                 if(n == 0):
-                    self.layers.append(GCNConv(args.former_encoder_dim, args.gnn_hidden_states))
+                    self.layers.append(
+                        GCNConv(args.former_encoder_dim, args.gnn_hidden_states))
                 elif(n == args.gnn_layers-1):
-                    self.layers.append(GCNConv(args.gnn_hidden_states, args.latter_encoder_dim))
+                    self.layers.append(
+                        GCNConv(args.gnn_hidden_states, args.latter_encoder_dim))
                 else:
-                    self.layers.append(GCNConv(args.gnn_hidden_states, args.gnn_hidden_states))
+                    self.layers.append(
+                        GCNConv(args.gnn_hidden_states, args.gnn_hidden_states))
         else:
-            self.layers.append(GCNConv(args.former_encoder_dim, args.latter_encoder_dim))
+            self.layers.append(
+                GCNConv(args.former_encoder_dim, args.latter_encoder_dim))
 
     def forward(self, graphs, x, valid=True):
         """forward
@@ -200,8 +210,10 @@ class GCNLayer(nn.Module):
             pyg_graphs.append(pyg_graph)
         pyg_graphs = PyG.data.Batch.from_data_list(pyg_graphs)
 
-        assert pyg_graphs.x.equal(torch.reshape(x.transpose(0, 1), (-1, embed_dim)))
-        assert pyg_graphs.x.view(bsz, seq_len, embed_dim).transpose(0, 1).equal(x)
+        assert pyg_graphs.x.equal(torch.reshape(
+            x.transpose(0, 1), (-1, embed_dim)))
+        assert pyg_graphs.x.view(
+            bsz, seq_len, embed_dim).transpose(0, 1).equal(x)
 
         # Calc Conv
         conv_x = pyg_graphs.x
@@ -350,6 +362,7 @@ class TransGnnModel(FairseqEncoderDecoderModel):
         """Build a new model instance."""
 
         # make sure all arguments are present in older models
+        from .pos_graph_arch import base_architecture
         base_architecture(args)
 
         if args.encoder_layers_to_keep:
@@ -432,8 +445,8 @@ class TransGnnModel(FairseqEncoderDecoderModel):
         features_only: bool = False,
         alignment_layer: Optional[int] = None,
         alignment_heads: Optional[int] = None,
-        src_anchors = None,
-        graphs = None,
+        src_anchors=None,
+        graphs=None,
     ):
         """
         Run the forward pass for an encoder-decoder model.
@@ -746,10 +759,9 @@ class GNNTransformerEncoder(FairseqEncoder):
             state_dict[version_key] = torch.Tensor([1])
         return state_dict
 
-GNN_TYPE={
-    'gcn':GCNLayer,
-    'gat':GATLayer,
-    'none':NoGNN,
-}
 
-from .pos_graph_arch import gat_architecture, gcn_architecture, base_architecture
+GNN_TYPE = {
+    'gcn': GCNLayer,
+    'gat': GATLayer,
+    'none': NoGNN,
+}

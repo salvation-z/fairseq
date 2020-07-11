@@ -8,7 +8,7 @@ import logging
 import numpy as np
 import torch
 
-from . import data_utils, FairseqDataset, BaseWrapperDataset
+from fairseq.data import data_utils, FairseqDataset, BaseWrapperDataset
 
 import torch_geometric as PyG
 

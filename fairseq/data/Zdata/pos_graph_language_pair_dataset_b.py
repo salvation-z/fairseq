@@ -8,7 +8,7 @@ import logging
 import numpy as np
 import torch
 
-from . import data_utils, FairseqDataset, BaseWrapperDataset
+from fairseq.data import data_utils, FairseqDataset, BaseWrapperDataset
 
 import torch_geometric as PyG
 
@@ -58,7 +58,6 @@ def collate_with_graph(
     # Getting Graph data
     anchor = merge('anchor', left_pad=left_pad_target)
     anchor = target.index_select(0, sort_order)
-
 
     batch = {
         'id': id,
@@ -158,16 +157,19 @@ class POSGraphLanguagePairDatasetb(FairseqDataset):
         if self.append_eos_to_target:
             eos = self.tgt_dict.eos() if self.tgt_dict else self.src_dict.eos()
             if self.tgt and self.tgt[index][-1] != eos:
-                tgt_item = torch.cat([self.tgt[index], torch.LongTensor([eos])])
+                tgt_item = torch.cat(
+                    [self.tgt[index], torch.LongTensor([eos])])
 
         if self.append_bos:
             bos = self.tgt_dict.bos() if self.tgt_dict else self.src_dict.bos()
             if self.tgt and self.tgt[index][0] != bos:
-                tgt_item = torch.cat([torch.LongTensor([bos]), self.tgt[index]])
+                tgt_item = torch.cat(
+                    [torch.LongTensor([bos]), self.tgt[index]])
 
             bos = self.src_dict.bos()
             if self.src[index][-1] != bos:
-                src_item = torch.cat([torch.LongTensor([bos]), self.src[index]])
+                src_item = torch.cat(
+                    [torch.LongTensor([bos]), self.src[index]])
 
         if self.remove_eos_from_source:
             eos = self.src_dict.eos()
@@ -240,7 +242,8 @@ class POSGraphLanguagePairDatasetb(FairseqDataset):
         else:
             indices = np.arange(len(self))
         if self.tgt_sizes is not None:
-            indices = indices[np.argsort(self.tgt_sizes[indices], kind='mergesort')]
+            indices = indices[np.argsort(
+                self.tgt_sizes[indices], kind='mergesort')]
         return indices[np.argsort(self.src_sizes[indices], kind='mergesort')]
 
     @property

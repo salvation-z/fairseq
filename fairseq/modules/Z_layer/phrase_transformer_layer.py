@@ -15,7 +15,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from fairseq import utils
 from fairseq.modules import LayerNorm
-from fairseq.modules import MultiPhraseAttention
+from ..Z_layer import MultiPhraseAttention
+from .. import MultiheadAttention
+# from fairseq.modules import MultiPhraseAttention, MultiheadAttention
 from torch import Tensor
 
 
@@ -81,7 +83,7 @@ class PhraseTransformerEncoderLayer(nn.Module):
                     state_dict["{}.{}.{}".format(name, new, m)] = state_dict[k]
                     del state_dict[k]
 
-    def forward(self, x, encoder_padding_mask, attn_mask: Optional[Tensor] = None):
+    def forward(self, x, encoder_padding_mask, attn_mask: Optional[Tensor] = None, need_phrase=True):
         """
         Args:
             x (Tensor): input to the layer of shape `(seq_len, batch, embed_dim)`
@@ -103,12 +105,14 @@ class PhraseTransformerEncoderLayer(nn.Module):
         if attn_mask is not None:
             attn_mask = attn_mask.masked_fill(attn_mask.to(torch.bool), -1e8)
         # attention applied here
-        x, _ = self.self_attn(
+        x, _, phrase = self.self_attn(
             query=x,
             key=x,
             value=x,
             key_padding_mask=encoder_padding_mask,
             attn_mask=attn_mask,
+            phrase_info={},
+            need_phrase=need_phrase,
         )
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = residual + x
@@ -125,6 +129,8 @@ class PhraseTransformerEncoderLayer(nn.Module):
         x = residual + x
         if not self.normalize_before:
             x = self.final_layer_norm(x)
+        if(need_phrase):
+            return x, phrase
         return x
 
 
@@ -143,6 +149,8 @@ class PhraseTransformerDecoderLayer(nn.Module):
         args (argparse.Namespace): parsed command-line arguments
         no_encoder_attn (bool, optional): whether to attend to encoder outputs
             (default: False).
+
+    In Decoder layer, encoder_attn is the cross attention while self_attn is masked self attention
     """
 
     def __init__(
@@ -196,14 +204,14 @@ class PhraseTransformerDecoderLayer(nn.Module):
         return nn.Linear(input_dim, output_dim)
 
     def build_self_attention(self, embed_dim, args, add_bias_kv=False, add_zero_attn=False):
-        return MultiPhraseAttention(
+        # In decoder layer, basic multihead-attention is applied as self-attention
+        return MultiheadAttention(
             embed_dim,
             args.decoder_attention_heads,
             dropout=args.attention_dropout,
             add_bias_kv=add_bias_kv,
             add_zero_attn=add_zero_attn,
             self_attention=not getattr(args, "cross_self_attention", False),
-            phrase_args=args,
         )
 
     def build_encoder_attention(self, embed_dim, args):
@@ -224,6 +232,7 @@ class PhraseTransformerDecoderLayer(nn.Module):
         self,
         x,
         encoder_out: Optional[torch.Tensor] = None,
+        encoder_phrase: Optional[torch.Tensor] = None,
         encoder_padding_mask: Optional[torch.Tensor] = None,
         incremental_state: Optional[Dict[str, Dict[str, Optional[Tensor]]]] = None,
         prev_self_attn_state: Optional[List[torch.Tensor]] = None,
@@ -232,6 +241,7 @@ class PhraseTransformerDecoderLayer(nn.Module):
         self_attn_padding_mask: Optional[torch.Tensor] = None,
         need_attn: bool = False,
         need_head_weights: bool = False,
+        need_phrase: bool = False,
     ):
         """
         Args:
@@ -248,6 +258,8 @@ class PhraseTransformerDecoderLayer(nn.Module):
         """
         if need_head_weights:
             need_attn = True
+
+        assert encoder_phrase is not None
 
         residual = x
         if self.normalize_before:
@@ -287,6 +299,7 @@ class PhraseTransformerDecoderLayer(nn.Module):
         else:
             y = x
 
+        # apply self-attention
         x, attn = self.self_attn(
             query=x,
             key=y,
@@ -301,6 +314,7 @@ class PhraseTransformerDecoderLayer(nn.Module):
         if not self.normalize_before:
             x = self.self_attn_layer_norm(x)
 
+        # apply cross attention
         if self.encoder_attn is not None:
             residual = x
             if self.normalize_before:

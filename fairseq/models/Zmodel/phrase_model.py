@@ -3,10 +3,10 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-from .phrase_model_arch import (
-    base_architecture,
+# from .phrase_model_arch import (
+#     base_architecture,
 
-)
+# )
 import math
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -154,7 +154,7 @@ class PhraseTransformerModel(FairseqEncoderDecoderModel):
     @classmethod
     def build_model(cls, args, task):
         """Build a new model instance."""
-
+        from .phrase_model_arch import base_architecture
         # make sure all arguments are present in older models
         base_architecture(args)
 

@@ -28,7 +28,7 @@ from torch import Tensor, nn
 from torch.nn import Parameter
 from fairseq.incremental_decoding_utils import with_incremental_state
 
-from torch_geometric import GAT, GCN
+# from torch_geometric.nn import GATConv, GCNConv
 
 
 class PhraseGenerator(nn.Module):
@@ -204,6 +204,7 @@ class MultiPhraseAttention(nn.Module):
         # If apply_phrase is set True, we supposed that the key is tokens
         # If apply_phrase is set False, we sepposed that the key is phrase
         if(self.apply_phrase):
+            assert phrase_args is not None
             self.phrase_encoder = PhraseGenerator(phrase_args)
             assert self.gaussian_attention
 
@@ -222,10 +223,10 @@ class MultiPhraseAttention(nn.Module):
         self.scaling = self.head_dim ** -0.5
 
         # Note:
-        # 1. if self_attention=True, apply_phrase should also be True
+        # 1. if self_attention&gaussian_attention = True, apply_phrase should also be True
         # 2. if encoder_decoder_attention=True, apply_phrase should be False
         self.self_attention = self_attention
-        if(self.self_attention):
+        if(self.self_attention and self.gaussian_attention):
             assert self.apply_phrase
         self.encoder_decoder_attention = encoder_decoder_attention
         if(self.encoder_decoder_attention):
