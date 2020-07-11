@@ -32,10 +32,11 @@ logger = logging.getLogger('fairseq_cli.preprocess')
 def main(args):
 
     # change path to incorporate with vscode env
-    args.destdir = os.path.join(os.getenv('DataPath'), args.destdir)
-    args.trainpref = os.path.join(os.getenv('DataPath'), args.trainpref)
-    if(args.srcdict):
-        args.srcdict = os.path.join(os.getenv('DataPath'), args.srcdict)
+    if(os.getenv('DataPath') is not None):
+        args.destdir = os.path.join(os.getenv('DataPath'), args.destdir)
+        args.trainpref = os.path.join(os.getenv('DataPath'), args.trainpref)
+        if(args.srcdict):
+            args.srcdict = os.path.join(os.getenv('DataPath'), args.srcdict)
     # args.validpref = os.path.join(os.getenv('DataPath'), args.validpref)
     # args.testpref = os.path.join(os.getenv('DataPath'), args.testpref)
 

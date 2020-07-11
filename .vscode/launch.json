@@ -31,70 +31,20 @@
             "type": "python",
             "request": "launch",
             "env": {
-                "DataPath": "/home5/zhangzhuocheng/lab/pos_graph/datasets/new-raw"
+                "DataPath": "/home2/zhangzhuocheng/translation/datasets/zh_en/std"
             },
-            "program": "/home5/zhangzhuocheng/lab/pos_graph/fairseq/preprocess.py",
+            "program": "/home2/zhangzhuocheng/lab/torch15/fairseq_z/fairseq/preprocess.py",
             "console": "integratedTerminal",
             "args": [
-                "--trainpref", "train.tok.clean.bpe.32000",
-                "--validpref", "newstest2016.tok.bpe.32000",
-                "--testpref", "newstest2015.tok.bpe.32000,newstest2014.tok.bpe.32000,newstest2013.tok.bpe.32000,newstest2012.tok.bpe.32000,newstest2011.tok.bpe.32000,newstest2010.tok.bpe.32000,newstest2009.tok.bpe.32000", 
-                "--source-lang", "en", 
-                "--target-lang", "de",
-                "--destdir", "../new-bin", 
-                "--joined-dictionary",
+                "--trainpref", "source/train_bpe30k",
+                "--validpref", "source/mt08_u8",
+                "--testpref", "source/mt06_u8,source/mt05_u8,source/mt04_u8,source/mt03_u8,source/mt02_u8", 
+                "--source-lang", "zh", 
+                "--target-lang", "en",
+                "--destdir", "bin", 
                 "--workers", "16"
             ]   
         },
-
-        {
-            "name": "Python: preprocess anchor",
-            "type": "python",
-            "request": "launch",
-            "env": {
-                "DataPath": "/home5/zhangzhuocheng/lab/pos_graph/datasets/new-raw"
-            },
-            "program": "/home5/zhangzhuocheng/lab/pos_graph/fairseq/preprocess.py",
-            "console": "integratedTerminal",
-            "args": [
-                "--trainpref", "train.tok.clean.bpe.32000",
-                "--validpref", "newstest2016.tok.bpe.32000",
-                "--testpref", "newstest2015.tok.bpe.32000,newstest2014.tok.bpe.32000,newstest2013.tok.bpe.32000,newstest2012.tok.bpe.32000,newstest2011.tok.bpe.32000,newstest2010.tok.bpe.32000,newstest2009.tok.bpe.32000", 
-                "--source-lang", "anchor",
-                "--target-lang", "de",
-                "--destdir", "../new-bin/temp", 
-                "--joined-dictionary",
-                "--workers", "16",
-                "--only-source",
-                "--srcdict", "dict.anchor.txt"
-            ]   
-        },
-
-        // Launch setting for data preprocess
-        // Change it for every new datasets
-        // To be changed:
-        // 1. DataPath
-        {
-            "name": "Python: preprocess tiny",
-            "type": "python",
-            "request": "launch",
-            "env": {
-                "DataPath": "/home5/zhangzhuocheng/lab/pos_graph"
-            },
-            "program": "/home5/zhangzhuocheng/lab/pos_graph/fairseq/preprocess.py",
-            "console": "integratedTerminal",
-            "args": [
-                "--trainpref", "datasets/tiny_raw/train.tok.clean.bpe.32000",
-                "--validpref", "datasets/tiny_raw/newstest2016.tok.bpe.32000",
-                "--testpref", "datasets/tiny_raw/newstest2015.tok.bpe.32000,datasets/tiny_raw/newstest2014.tok.bpe.32000,datasets/tiny_raw/newstest2013.tok.bpe.32000,datasets/tiny_raw/newstest2012.tok.bpe.32000,datasets/tiny_raw/newstest2011.tok.bpe.32000,datasets/tiny_raw/newstest2010.tok.bpe.32000,datasets/tiny_raw/newstest2009.tok.bpe.32000", 
-                "--source-lang", "en", 
-                "--target-lang", "de",
-                "--destdir", "datasets/tiny-bin", 
-                "--joined-dictionary",
-                "--workers", "16"
-            ]   
-        },
-
 
         // Launch setting for training
         // Change this before running
@@ -144,50 +94,6 @@
             ]
         },
         
-        // Launch setting for training
-        // Change this before running
-        // To be changed:
-        // 1. CUDA_VISIBLE_DEVICES
-        // 2. Dataset path
-        // 3. save_dir
-        {
-            "name": "Python: translate tiny",
-            "type": "python",
-            "request": "launch",
-            "program": "/home5/zhangzhuocheng/lab/pos_graph/fairseq/train.py",
-            "console": "integratedTerminal",
-            "cwd": "${workspaceFolder}",
-            "env": {"CUDA_VISIBLE_DEVICES": "-1"},
-            "args": [
-                "/home5/zhangzhuocheng/lab/pos_graph/datasets/tiny-bin",
-                "--task", "pos_translation",
-                "--arch", "gcn_transformer",
-                "--save-dir", "/home5/zhangzhuocheng/lab/pos_graph/models/pos_base/",
-                "--optimizer", "adam",
-                "--adam-betas", "(0.9, 0.98)",
-                "--clip-norm", "0.0",
-                "--lr", "7e-4",
-                "--lr-scheduler", "inverse_sqrt",
-                "--warmup-updates", "4000",
-                "--warmup-init-lr", "1e-07",
-                "--min-lr","1e-09",
-                "--dropout", "0.1",
-                "--weight-decay", "0.0001",
-                "--criterion", "label_smoothed_cross_entropy",
-                "--label-smoothing", "0.1",
-                "--max-tokens", "1024",
-                "--update-freq", "8",
-                "--max-update", "1500",
-                "--eval-bleu",
-                "--eval-bleu-args", "{\"beam\": 5, \"max_len_a\": 1.2, \"max_len_b\": 10}",
-                "--eval-bleu-detok", "moses",
-                "--eval-bleu-remove-bpe",
-                "--eval-bleu-print-samples", 
-                "--best-checkpoint-metric", "bleu",
-                "--debug-mode"
-            ]
-        },
-
         // Default launch setting of vscode
         // Runing the code you wanted without any arguments
         {
