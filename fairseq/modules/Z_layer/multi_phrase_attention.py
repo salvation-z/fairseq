@@ -192,6 +192,10 @@ class MultiPhraseAttention(nn.Module):
     ):
         super().__init__()
 
+        # what ever mode is running, phrase args should be given
+        assert phrase_args is not None
+        self.phrase_args = phrase_args
+
         # if both attention is turned on, there will be two W_k and W_q (W_v will remain the same as origin)
         self.gaussian_attention = self.phrase_args.gaussian_attention
         self.multihead_attention = self.phrase_args.multihead_attention
@@ -200,11 +204,9 @@ class MultiPhraseAttention(nn.Module):
         )
         # init for phrase repr
         self.apply_phrase = apply_phrase
-        self.phrase_args = phrase_args
         # If apply_phrase is set True, we supposed that the key is tokens
         # If apply_phrase is set False, we sepposed that the key is phrase
         if(self.apply_phrase):
-            assert phrase_args is not None
             self.phrase_encoder = PhraseGenerator(phrase_args)
             assert self.gaussian_attention
 
