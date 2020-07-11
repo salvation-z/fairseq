@@ -147,7 +147,7 @@ class PhraseTransformerModel(FairseqEncoderDecoderModel):
                             help='if True, original multihead attention is added')
         parser.add_argument('--gaussian-attention',  default=False, action='store_true',
                             help='if Trhe, gaussian attention is turned on')
-        parser.add_argument('--parse-function', default='fixed_window', type='str',
+        parser.add_argument('--parse-function', default='fixed_window', type=str,
                             help='the function used to parse the sequence ')
         # fmt: on
 
@@ -866,3 +866,6 @@ def Linear(in_features, out_features, bias=True):
     if bias:
         nn.init.constant_(m.bias, 0.0)
     return m
+
+
+from .phrase_model_arch import baseline_architecture
