@@ -118,6 +118,7 @@ fairseq-generate $data_dir \
     --path $model_dir/average_epoch.pt \
     --beam 5 --remove-bpe \
     --results-path $model_dir/infer \
+    --raw-output $
     | tee model_dir/average_epoch.log.json
 
 ### 2. update
