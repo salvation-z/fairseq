@@ -10,6 +10,7 @@ Translate raw text with a trained model. Batches data on-the-fly.
 from collections import namedtuple
 import fileinput
 import logging
+import codecs
 import math
 import sys
 import os
@@ -69,6 +70,12 @@ def make_batches(lines, args, task, max_positions, encode_fn):
 
 
 def main(args):
+
+    if(args.raw_output is not None):
+        raw_file = codecs.open(args.raw_output, 'w', 'utf-8')
+    else:
+        raw_file = None
+
     utils.import_user_module(args)
 
     if args.buffer_size < 1:
@@ -184,6 +191,8 @@ def main(args):
                 )
                 detok_hypo_str = decode_fn(hypo_str)
                 score = hypo['score'] / math.log(2)  # convert to base 2
+                if(raw_file is not None):
+                    raw_file.write(detok_hypo_str+'\n')
                 # original hypothesis (after tokenization and BPE)
                 print('H-{}\t{}\t{}'.format(id, score, hypo_str))
                 # detokenized hypothesis
@@ -205,6 +214,9 @@ def main(args):
 
         # update running id counter
         start_id += len(inputs)
+
+    if(raw_file is not None):
+        raw_file.close()
 
 
 def cli_main():

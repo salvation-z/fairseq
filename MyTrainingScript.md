@@ -106,24 +106,44 @@ python average_checkpoints.py \
 
 ## Valid
 
+- average_epoch:
+  - model=average_epoch.pt
+  - log=average_epoch.log.json
+- average_update:
+  - model=average_update.pt
+  - log=average_update.log.json
+
 - baseline-vaswani
-  - model_dir=/home2/zhangzhuocheng/lab/translation/models/phrase/zh_en_baseline
+  - model_dir=/home2/zhangzhuocheng/lab/translation/models/phrase/vaswani
   - data_dir=/home2/zhangzhuocheng/lab/translation/datasets/zh_en/std/bin
 - baseline-mine
   - model_dir=/home2/zhangzhuocheng/lab/translation/models/phrase/zh_en_baseline
   - data-dir=/home2/zhangzhuocheng/lab/translation/datasets/zh_en/std/bin
 
-### 1. epoch
+### 1. generate
 fairseq-generate $data_dir \
-    --path $model_dir/average_epoch.pt \
+    --path $model_dir/$model \
     --beam 5 --remove-bpe \
     --results-path $model_dir/infer \
-    --raw-output $
-    | tee model_dir/average_epoch.log.json
+    --raw-output $model_dir/infer/raw.txt \
+    | tee model_dir/$log
 
-### 2. update
-fairseq-generate $data_dir \
-    --path $model_dir/average_update.pt \
+### 2. interactivate
+- source:
+  - source_dir=/home2/zhangzhuocheng/lab/translation/datasets/zh_en/std/source
+fairseq-interactive $data_dir \
+    --path $model_dir/$model \
     --beam 5 --remove-bpe \
-    --results-path $model_dir/infer \
-    | tee model_dir/average_update.log.json
+    --input $source_dir/mt02_u8.zh \
+    --raw-output $model_dir/infer/out02.txt
+
+## Score
+
+- baseline-vaswani:
+  - infer_dir=/home2/zhangzhuocheng/lab/translation/models/phrase/vaswani/infer
+  - data_dir=/home2/zhangzhuocheng/lab/translation/datasets/zh_en/std/source
+- baseline-mine:
+  - infer_dir=/home2/zhangzhuocheng/lab/translation/models/phrase/zh_en_baseline/infer
+  - data_dir=/home2/zhangzhuocheng/lab/translation/datasets/zh_en/std/source
+
+perl scripts/multi-bleu.perl $data_dir/mt02_u8.en.low0 $data_dir/mt02_u8.en.low1 $data_dir/mt02_u8.en.low2 $data_dir/mt02_u8.en.low3 < $infer_dir/raw02.txt
