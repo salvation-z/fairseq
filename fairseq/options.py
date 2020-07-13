@@ -569,6 +569,10 @@ def add_generation_args(parser):
 
     # special decoding format for advanced decoding.
     group.add_argument('--decoding-format', default=None, type=str, choices=['unigram', 'ensemble', 'vote', 'dp', 'bs'])
+
+    # add by zzc
+    graoup.add_argument('--raw-output', default=None, type=str,
+                        help='path to save raw output (do not affect original outputs)')
     # fmt: on
     return group
 

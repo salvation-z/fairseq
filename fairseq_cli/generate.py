@@ -8,6 +8,7 @@ Translate pre-processed data with a trained model.
 """
 
 import logging
+import codecs
 import math
 import os
 import sys
@@ -37,6 +38,12 @@ def main(args):
 
 
 def _main(args, output_file):
+
+    if(args.raw_output is not None):
+        raw_file = codecs.open(args.raw_output, 'w', 'utf-8')
+    else:
+        raw_file = None
+
     logging.basicConfig(
         format='%(asctime)s | %(levelname)s | %(name)s | %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S',
@@ -201,6 +208,8 @@ def _main(args, output_file):
                 if not args.quiet:
                     score = hypo['score'] / math.log(2)  # convert to base 2
                     # original hypothesis (after tokenization and BPE)
+                    if(raw_file is not None):
+                        raw_file.write(detok_hypo_str+'\n')
                     print('H-{}\t{}\t{}'.format(sample_id, score, hypo_str), file=output_file)
                     # detokenized hypothesis
                     print('D-{}\t{}\t{}'.format(sample_id, score, detok_hypo_str), file=output_file)
@@ -253,6 +262,9 @@ def _main(args, output_file):
         num_sentences, gen_timer.n, gen_timer.sum, num_sentences / gen_timer.sum, 1. / gen_timer.avg))
     if has_target:
         logger.info('Generate {} with beam={}: {}'.format(args.gen_subset, args.beam, scorer.result_string()))
+
+    if(raw_file is not None):
+        raw_file.close()
 
     return scorer
 
