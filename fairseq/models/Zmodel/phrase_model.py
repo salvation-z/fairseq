@@ -8,8 +8,7 @@
 
 # )
 import math
-from typing import Any, Dict, List, Optional, Tuple
-
+from typing import Any, Dict, List, Optional, Tuple, NamedTuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -20,7 +19,6 @@ from fairseq.models import (
     FairseqIncrementalDecoder,
     register_model,
 )
-from fairseq.models.fairseq_encoder import EncoderOut
 from fairseq.modules import (
     AdaptiveSoftmax,
     LayerNorm,
@@ -44,6 +42,27 @@ DEFAULT_MAX_TARGET_POSITIONS = 1024
 # 4. Change PhraseTransformerDecoder layer √
 # 5. Change PhraseTransformerDecoder
 # 6. Add support for graph architecture(New data, New Task should be added)
+
+
+EncoderOut = NamedTuple(
+    "EncoderOut",
+    [
+        ("encoder_out", Tensor),  # T x B x C
+        ("encoder_padding_mask", Tensor),  # B x T
+        ("encoder_embedding", Tensor),  # B x T x C
+        ("encoder_states", Optional[List[Tensor]]),  # List[T x B x C]
+    ],
+)
+PhraseEncoderOut = NamedTuple(
+    "EncoderOut",
+    [
+        ("encoder_out", Tensor),  # T x B x C
+        ("encoder_padding_mask", Tensor),  # B x T
+        ("encoder_embedding", Tensor),  # B x T x C
+        ("encoder_states", Optional[List[Tensor]]),  # List[T x B x C]
+        ("phrase_repr", Tensor),  # P x B x C
+    ],
+)
 
 
 @register_model("phrase_transformer")
@@ -145,12 +164,16 @@ class PhraseTransformerModel(FairseqEncoderDecoderModel):
         # args for MultiPhraseAttention
         parser.add_argument('--multihead-attention', default=True, action='store_true',
                             help='if True, original multihead attention is added')
-        parser.add_argument('--gaussian-attention',  default=False, action='store_true',
+        parser.add_argument('--gaussian-attention', default=False, action='store_true',
                             help='if Trhe, gaussian attention is turned on')
         parser.add_argument('--parse-function', default='fixed_window', type=str,
                             help='the function used to parse the sequence ')
-        parser.add_argument('--need-phrase', default=False, action='store_true',
+        parser.add_argument('--phrase-decoder', default=False, action='store_true',
                             help='return the phrase repr when forwarding')
+        parser.add_argument('--window-size', default=3,
+                            help='the size of fixed window')
+        parser.add_argument('--generate-function', default='max-pooling',
+                            help='the represent function of phrase')
         # fmt: on
 
     @classmethod
@@ -343,7 +366,7 @@ class PhraseTransformerEncoder(FairseqEncoder):
         else:
             self.layernorm_embedding = None
 
-        self.need_phrase = args.need_phrase
+        self.need_phrase = args.phrase_decoder
 
     def build_encoder_layer(self, args):
         return PhraseTransformerEncoderLayer(args)
@@ -873,3 +896,5 @@ def Linear(in_features, out_features, bias=True):
 
 
 from .phrase_model_arch import baseline_architecture
+from .phrase_model_arch import encoder_mix_architecture
+from .phrase_model_arch import encoder_gauss_architecture

@@ -48,11 +48,11 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 fairseq-train \
 - vaswani_baseline: 
   - arch=transformer_wmt_en_de
   - model_dir=/home2/zhangzhuocheng/lab/translation/models/phrase/vaswani
-  - data_dir=/home2/zhangzhuocheng/lab/translation/datasets/zh_en/std/bin
+  - data_dir=/home2/zhangzhuocheng/lab/translation/datasets/zh_en/std/bin2
 - mine_baseline:
   - arch=phrase_baseline
-  - model_dir=/home2/zhangzhuocheng/lab/translation/models/phrase/zh_en_baseline
-  - data_dir=/home2/zhangzhuocheng/lab/translation/datasets/zh_en/std/bin
+  - model_dir=/home2/zhangzhuocheng/lab/translation/models/phrase/zh_en_baseline2
+  - data_dir=/home2/zhangzhuocheng/lab/translation/datasets/zh_en/std/bin2
 
 CUDA_VISIBLE_DEVICES=0,1,2,3 fairseq-train \
     $data_dir \
@@ -77,7 +77,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 fairseq-train \
     --save-interval-updates 1000 \
     --keep-interval-updates 5 \
     --keep-last-epochs 5 \
-    --max-updates 15000 \
+    --max-update 15000 \
     --eval-bleu \
     --eval-bleu-args '{"beam": 5, "max_len_a": 1.2, "max_len_b": 10}' \
     --eval-bleu-detok moses \
@@ -118,7 +118,7 @@ python average_checkpoints.py \
   - data_dir=/home2/zhangzhuocheng/lab/translation/datasets/zh_en/std/bin
 - baseline-mine
   - model_dir=/home2/zhangzhuocheng/lab/translation/models/phrase/zh_en_baseline
-  - data-dir=/home2/zhangzhuocheng/lab/translation/datasets/zh_en/std/bin
+  - data_dir=/home2/zhangzhuocheng/lab/translation/datasets/zh_en/std/bin
 
 ### 1. generate
 fairseq-generate $data_dir \
@@ -126,6 +126,7 @@ fairseq-generate $data_dir \
     --beam 5 --remove-bpe \
     --results-path $model_dir/infer \
     --raw-output $model_dir/infer/raw.txt \
+    --gen-subset test \
     | tee model_dir/$log
 
 ### 2. interactivate
@@ -147,3 +148,6 @@ fairseq-interactive $data_dir \
   - data_dir=/home2/zhangzhuocheng/lab/translation/datasets/zh_en/std/source
 
 perl scripts/multi-bleu.perl $data_dir/mt02_u8.en.low0 $data_dir/mt02_u8.en.low1 $data_dir/mt02_u8.en.low2 $data_dir/mt02_u8.en.low3 < $infer_dir/raw02.txt
+
+## Auto EVAL
+python auto_eval.py --path $model_dir --group zh_en_2 --print_args True --average update
