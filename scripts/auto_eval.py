@@ -108,6 +108,7 @@ def update(args):
 
 
 def average(args, debug):
+    print('Averaging' + '.' * 50)
     exe_code = 'python /home2/zhangzhuocheng/lab/torch15/fairseq_z/fairseq/scripts/average_checkpoints.py'
     exe_code += ' --inputs '
     exe_code += args['path']
@@ -123,13 +124,14 @@ def average(args, debug):
         exe_code += args['path'] + '/average-update.pt'
         args['infer_args']['path'] = args['path'] + '/average-update.pt'
     if(debug):
-        print(exe_code)
+        print(exe_code, end='\n\n')
     else:
         os.system(exe_code)
     return args
 
 
 def infer(args, debug):
+    print('Infering' + '.' * 50)
     exe_code = args['infer_code']
     infer_args = args['infer_args']
     if(not os.path.exists(args['path'] + '/infer')):
@@ -144,10 +146,12 @@ def infer(args, debug):
             os.system(exec_code)
         else:
             print(exec_code)
+    print()
     return args
 
 
 def valid(args, debug):
+    print('Validing' + '.' * 50)
     exe_code = args['valid_code']
     for file_name in args['files']:
         file_path_base = args['input_path'] + file_name + args['target_lang']
@@ -160,6 +164,7 @@ def valid(args, debug):
             os.system(exec_code)
         else:
             print(exec_code)
+    print()
     return args
 
 
