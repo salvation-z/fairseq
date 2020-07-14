@@ -36,29 +36,10 @@ group_1 = {
 }
 
 
-# Group 2
-group_2 = {
-    'infer_code': 'fairseq-interactive /home2/zhangzhuocheng/lab/translation/datasets/zh_en/std/bin2',
-    'valid_code': 'perl /home2/zhangzhuocheng/lab/torch15/fairseq_z/fairseq/scripts/multi-bleu.perl',
-    # infer args
-    'infer_args': infer_arguments,
-    'files': file_names,
-    'input_path': '/home2/zhangzhuocheng/lab/translation/datasets/zh_en/std/source/',
-    'valid_pref': valid_pref,
-    'source_lang': '30kbpe.zh',
-    'target_lang': 'en',
-    'print_args': 'False',
-    # average epoch or update
-    'average': None,
-    # path to model
-    'path': None,
-}
-
-
 # Group List
 arg_group = {
     'zh_en_1': group_1,
-    'zh_en_2': group_2,
+    # 'zh_en_2': group_2,
 }
 
 
@@ -159,7 +140,7 @@ def valid(args, debug):
         file_paths = [file_path_base + pref for pref in args['valid_pref']]
         exec_code = exe_code + ' ' + ' '.join(file_paths)
         exec_code += ' < %s' % output_path
-        exec_code += ' | tee %s/infer/%s_bleu_%s.txt' % (args['path'], file_name[:-1], args['average'])
+        exec_code += ' | tee %s/infer/%s_bleu.%s.txt' % (args['path'], file_name[:-1], args['average'])
         if(not debug):
             os.system(exec_code)
         else:
