@@ -39,6 +39,7 @@ class PhraseTransformerEncoderLayer(nn.Module):
     def __init__(self, args):
         super().__init__()
         self.embed_dim = args.encoder_embed_dim
+        self.apply_phrase = args.gaussian_attention
         self.self_attn = self.build_self_attention(self.embed_dim, args)
         self.self_attn_layer_norm = LayerNorm(self.embed_dim)
         self.dropout = args.dropout
@@ -67,6 +68,7 @@ class PhraseTransformerEncoderLayer(nn.Module):
             dropout=args.attention_dropout,
             self_attention=True,
             phrase_args=args,
+            apply_phrase=self.apply_phrase
         )
 
     def upgrade_state_dict_named(self, state_dict, name):
@@ -234,6 +236,7 @@ class PhraseTransformerDecoderLayer(nn.Module):
             dropout=args.attention_dropout,
             encoder_decoder_attention=True,
             phrase_args=args,
+            apply_phrase=False,
         )
 
     def prepare_for_onnx_export_(self):

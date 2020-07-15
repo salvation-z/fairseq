@@ -14,12 +14,13 @@
             "console":"integratedTerminal",
             "cwd": "${workspaceFolder}",
             "args": [
-                "--path", "/home2/zhangzhuocheng/lab/translation/models/phrase/zh_en_base",
+                // "--path", "/home2/zhangzhuocheng/lab/translation/models/phrase/zh_en_base",
                 // "--path", "/home2/zhangzhuocheng/lab/translation/models/phrase/zh_en_encoder_mix",
+                "--path", "/home2/zhangzhuocheng/lab/translation/models/phrase/zh_en_base2",
                 "--group", "zh_en_1",
                 "--print_args", "True",
                 "--average", "update",
-                "--debug", "True",
+                "--debug", "False",
             ]
         },
         
@@ -62,7 +63,7 @@
             "program": "/home2/zhangzhuocheng/lab/torch15/fairseq_z/fairseq/train.py",
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
-            "env": {"CUDA_VISIBLE_DEVICES": "0,1,2,3"},
+            "env": {"CUDA_VISIBLE_DEVICES": "-1"},
             "args": [
                 "/home2/zhangzhuocheng/lab/translation/datasets/zh_en/std/bin",
                 "--task", "translation",
@@ -81,7 +82,7 @@
                 "--criterion", "label_smoothed_cross_entropy",
                 "--label-smoothing", "0.1",
                 "--max-tokens", "4096",
-                "--update-freq", "2",
+                "--update-freq", "8",
                 "--log-format", "json",
                 "--log-interval", "10",
                 "--max-update", "15000",

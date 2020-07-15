@@ -42,6 +42,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 fairseq-train \
   - model_dir=/home2/zhangzhuocheng/lab/translation/models/phrase/encode_mix
   - data_dir=/home2/zhangzhuocheng/lab/translation/datasets/zh_en/std/bin
 
+### hyp para 1
 CUDA_VISIBLE_DEVICES=0,1,2,3 fairseq-train \
     $data_dir \
     --save-dir $model_dir \
@@ -55,6 +56,38 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 fairseq-train \
     --lr 0.0007 \
     --min-lr 1e-09 \
     --weight-decay 0.0 \
+    --dropout 0.1 \
+    --criterion label_smoothed_cross_entropy \
+    --label-smoothing 0.1 \
+    --max-tokens 4096 \
+    --update-freq 2 \
+    --no-progress-bar \
+    --log-format json \
+    --log-interval 10 \
+    --save-interval-updates 1000 \
+    --keep-interval-updates 5 \
+    --keep-last-epochs 5 \
+    --max-update 15000 \
+    --eval-bleu \
+    --eval-bleu-args '{"beam": 5, "max_len_a": 1.2, "max_len_b": 10}' \
+    --eval-bleu-detok moses \
+    --eval-bleu-remove-bpe \
+    --eval-bleu-print-samples
+
+### hyp para 2
+CUDA_VISIBLE_DEVICES=0,1,2,3 fairseq-train \
+    $data_dir \
+    --save-dir $model_dir \
+    --arch $arch \
+    --optimizer adam \
+    --adam-betas '(0.9, 0.98)' \
+    --clip-norm 0.0 \
+    --lr-scheduler inverse_sqrt \
+    --warmup-init-lr 1e-07 \
+    --warmup-updates 4000 \
+    --lr 5e-4 \
+    --min-lr 1e-09 \
+    --weight-decay 0.0001 \
     --dropout 0.1 \
     --criterion label_smoothed_cross_entropy \
     --label-smoothing 0.1 \
