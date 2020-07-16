@@ -172,4 +172,4 @@ fairseq-interactive $data_dir \
 perl scripts/multi-bleu.perl $data_dir/mt02_u8.en.low0 $data_dir/mt02_u8.en.low1 $data_dir/mt02_u8.en.low2 $data_dir/mt02_u8.en.low3 < $infer_dir/raw02.txt
 
 ## Auto EVAL
-python auto_eval.py --path $model_dir --group zh_en_2 --print_args True --average update
+python auto_eval.py --path $model_dir --group zh_en_1 --print_args True --average update

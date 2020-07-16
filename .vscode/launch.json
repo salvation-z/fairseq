@@ -55,20 +55,21 @@
         // 1. CUDA_VISIBLE_DEVICES
         // 2. Dataset path
         // 3. save_dir
-        // 4. In original Transformer, training step is 100k
         {
-            "name": "Python: translate_encoder_mix",
+            "name": "Python: translate",
             "type": "python",
             "request": "launch",
             "program": "/home2/zhangzhuocheng/lab/torch15/fairseq_z/fairseq/train.py",
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
-            "env": {"CUDA_VISIBLE_DEVICES": "-1"},
+            "env": {"CUDA_VISIBLE_DEVICES": "0"},
             "args": [
                 "/home2/zhangzhuocheng/lab/translation/datasets/zh_en/std/bin",
                 "--task", "translation",
-                "--arch", "phrase_encoder_mix",
-                "--save-dir", "/home2/zhangzhuocheng/lab/translation/models/phrase/zh_en_encoder_mix",
+                // "--arch", "phrase_encoder_mix",
+                "--arch", "phrase_encoder_gauss",
+                // "--save-dir", "/home2/zhangzhuocheng/lab/translation/models/phrase/zh_en_encoder_mix",
+                "--save-dir", "/home2/zhangzhuocheng/lab/translation/models/phrase/encoder_gauss",
                 "--optimizer", "adam",
                 "--adam-betas", "(0.9, 0.98)",
                 "--clip-norm", "0.0",
@@ -78,11 +79,11 @@
                 "--warmup-init-lr", "1e-07",
                 "--min-lr","1e-09",
                 "--dropout", "0.1",
-                "--weight-decay", "0.0",
+                "--weight-decay", "0.0001",
                 "--criterion", "label_smoothed_cross_entropy",
                 "--label-smoothing", "0.1",
                 "--max-tokens", "4096",
-                "--update-freq", "8",
+                "--update-freq", "2",
                 "--log-format", "json",
                 "--log-interval", "10",
                 "--max-update", "15000",
